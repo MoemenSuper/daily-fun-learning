@@ -1,5 +1,6 @@
 using System.Diagnostics;
 using System.Security.Cryptography;
+using Microsoft.Windows.AppLifecycle;
 using Microsoft.Windows.AppNotifications;
 using Microsoft.Windows.AppNotifications.Builder;
 
@@ -7,8 +8,7 @@ namespace DailyLearningGuide;
 
 internal static class Program
 {
-    private static readonly ManualResetEventSlim ActivationHandled = new(false);
-    private static Exception? _activationError;
+    private const string NotificationActivationArgument = "----AppNotificationActivated:";
     private static readonly bool DiagnosticEnabled = Environment.GetEnvironmentVariable("DLG_DIAGNOSTIC") == "1";
 
     [STAThread]
@@ -17,8 +17,14 @@ internal static class Program
         try
         {
             Trace($"start args={string.Join('|', args)}");
+            var isNotificationActivation = args.Contains(NotificationActivationArgument);
             using var mutex = new Mutex(true, "Local\\DailyLearningGuide.Client", out var ownsMutex);
             Trace($"mutex owns={ownsMutex}");
+            if (!ownsMutex && isNotificationActivation)
+            {
+                ownsMutex = mutex.WaitOne(TimeSpan.FromSeconds(5));
+                Trace($"mutex acquired after wait={ownsMutex}");
+            }
             if (!ownsMutex) return 0;
 
             if (args.Contains("--register-device")) return RegisterDevice(reset: false);
@@ -32,10 +38,18 @@ internal static class Program
             manager.Register();
             Trace("registered");
 
-            if (ActivationHandled.Wait(TimeSpan.FromSeconds(1)))
+            if (isNotificationActivation)
             {
+                var activation = AppInstance.GetCurrent().GetActivatedEventArgs();
+                if (
+                    activation.Kind != ExtendedActivationKind.AppNotification ||
+                    activation.Data is not AppNotificationActivatedEventArgs notificationArgs
+                )
+                {
+                    throw new InvalidOperationException("Windows launched the notification activator without app-notification data.");
+                }
+                HandleNotificationInvocation(notificationArgs);
                 manager.Unregister();
-                if (_activationError is not null) throw _activationError;
                 return 0;
             }
 
@@ -93,22 +107,23 @@ internal static class Program
 
     private static void OnNotificationInvoked(AppNotificationManager sender, AppNotificationActivatedEventArgs args)
     {
-        Trace($"notification invoked args={args.Argument}");
         try
         {
-            var values = ParseArguments(args.Argument);
-            if (values.GetValueOrDefault("action") != "open") return;
-            var url = new LearningApiClient(ClientConfig.Load()).CreateOpeningUrlAsync().GetAwaiter().GetResult();
-            Process.Start(new ProcessStartInfo(url) { UseShellExecute = true });
+            HandleNotificationInvocation(args);
         }
         catch (Exception error)
         {
-            _activationError = error;
+            WriteError(error);
         }
-        finally
-        {
-            ActivationHandled.Set();
-        }
+    }
+
+    private static void HandleNotificationInvocation(AppNotificationActivatedEventArgs args)
+    {
+        Trace($"notification invoked args={args.Argument}");
+        var values = ParseArguments(args.Argument);
+        if (values.GetValueOrDefault("action") != "open") return;
+        var url = new LearningApiClient(ClientConfig.Load()).CreateOpeningUrlAsync().GetAwaiter().GetResult();
+        Process.Start(new ProcessStartInfo(url) { UseShellExecute = true });
     }
 
     private static Dictionary<string, string> ParseArguments(string arguments) => arguments

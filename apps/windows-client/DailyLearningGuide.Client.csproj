@@ -16,5 +16,6 @@
   <ItemGroup>
     <PackageReference Include="Microsoft.WindowsAppSDK.Foundation" Version="2.1.0" />
     <PackageReference Include="Microsoft.WindowsAppSDK.Runtime" Version="2.2.0" />
+    <TrimmerRootAssembly Include="Microsoft.Windows.AppLifecycle.Projection" />
   </ItemGroup>
 </Project>
