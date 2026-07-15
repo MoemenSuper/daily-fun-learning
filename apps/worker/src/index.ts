@@ -198,6 +198,13 @@ app.post('/api/quizzes/:id/answer', async (c) => {
     .bind(questionId)
     .first<{ lesson_id: number; correct_answer: string; explanation: string }>()
   if (!question) return c.json({ error: 'Question not found.' }, 404)
+  const progress = await c.env.DB
+    .prepare('SELECT state FROM lesson_progress WHERE lesson_id = ?')
+    .bind(question.lesson_id)
+    .first<{ state: string }>()
+  if (progress?.state !== 'quiz_pending') {
+    return c.json({ error: 'This lesson is not awaiting a quiz answer.' }, 409)
+  }
 
   const correct = parsed.data.answer === question.correct_answer
   await c.env.DB.batch([
@@ -224,6 +231,203 @@ app.post('/api/quizzes/:id/answer', async (c) => {
   ])
 
   return c.json({ correct, explanation: question.explanation, state: 'completed' })
+})
+
+app.get('/api/reviews/later', async (c) => {
+  if (!(await hasBrowserSession(c))) return c.json({ error: 'Unauthorized.' }, 401)
+  const reviews = await c.env.DB
+    .prepare(
+      `SELECT l.id, l.slug, l.title, l.summary, t.name AS topic, p.state,
+              COALESCE(rs.reason, 'saved_for_later') AS reason,
+              COALESCE(rs.scheduled_at, p.updated_at) AS saved_at
+       FROM lessons l
+       JOIN topics t ON t.id = l.topic_id
+       JOIN lesson_progress p ON p.lesson_id = l.id
+       LEFT JOIN review_schedule rs ON rs.lesson_id = l.id AND rs.reviewed_at IS NULL
+       WHERE p.review_only = 1 OR rs.lesson_id IS NOT NULL
+       ORDER BY CASE WHEN rs.reason = 'incorrect_answer' THEN 0 ELSE 1 END, saved_at DESC`,
+    )
+    .all()
+  return c.json({ reviews: reviews.results })
+})
+
+app.get('/api/reviews/:id', async (c) => {
+  if (!(await hasBrowserSession(c))) return c.json({ error: 'Unauthorized.' }, 401)
+  const lessonId = Number(c.req.param('id'))
+  if (!Number.isInteger(lessonId)) return c.json({ error: 'Invalid lesson id.' }, 400)
+  const lesson = await c.env.DB
+    .prepare(
+      `SELECT l.id, l.slug, l.title, l.summary, l.deep_explanation AS deepExplanation, p.state
+       FROM lessons l JOIN lesson_progress p ON p.lesson_id = l.id
+       LEFT JOIN review_schedule rs ON rs.lesson_id = l.id AND rs.reviewed_at IS NULL
+       WHERE l.id = ? AND (p.review_only = 1 OR rs.lesson_id IS NOT NULL)`,
+    )
+    .bind(lessonId)
+    .first()
+  if (!lesson) return c.json({ error: 'Review lesson not found.' }, 404)
+  const quiz = await c.env.DB
+    .prepare('SELECT id, prompt, options_json FROM quiz_questions WHERE lesson_id = ? ORDER BY position LIMIT 1')
+    .bind(lessonId)
+    .first<{ id: number; prompt: string; options_json: string }>()
+  return c.json({
+    lesson,
+    quiz: quiz ? { id: quiz.id, prompt: quiz.prompt, options: JSON.parse(quiz.options_json) } : null,
+  })
+})
+
+app.post('/api/reviews/:id/start', async (c) => {
+  if (!(await hasBrowserSession(c))) return c.json({ error: 'Unauthorized.' }, 401)
+  const lessonId = Number(c.req.param('id'))
+  if (!Number.isInteger(lessonId)) return c.json({ error: 'Invalid lesson id.' }, 400)
+  const updated = await transitionLessonState(
+    c.env.DB,
+    lessonId,
+    ['review_later', 'scheduled_for_review', 'completed'],
+    'quiz_pending',
+    true,
+  )
+  return updated ? c.json({ state: 'quiz_pending' }) : c.json({ error: 'Review is unavailable.' }, 409)
+})
+
+app.get('/api/profile', async (c) => {
+  if (!(await hasBrowserSession(c))) return c.json({ error: 'Unauthorized.' }, 401)
+  const profile = await c.env.DB
+    .prepare('SELECT timezone, notification_hour, preferences_json FROM learning_profiles WHERE id = 1')
+    .first<{ timezone: string; notification_hour: number; preferences_json: string }>()
+  if (!profile) return c.json({ error: 'Profile not found.' }, 404)
+  return c.json({
+    timezone: profile.timezone,
+    notificationHour: profile.notification_hour,
+    preferences: JSON.parse(profile.preferences_json),
+  })
+})
+
+app.put('/api/profile', async (c) => {
+  if (!(await hasBrowserSession(c))) return c.json({ error: 'Unauthorized.' }, 401)
+  const parsed = z
+    .object({
+      notificationHour: z.number().int().min(0).max(23),
+      preferences: z.object({
+        distribution: z.object({
+          priority: z.number().int().min(0).max(100),
+          core: z.number().int().min(0).max(100),
+          adjacent: z.number().int().min(0).max(100),
+        }),
+        concreteExamples: z.boolean(),
+        explainCausalSteps: z.boolean(),
+        clarityOverBrevity: z.boolean(),
+        codeLiteracyGoal: z.boolean(),
+        gamification: z.literal(false),
+      }),
+    })
+    .safeParse(await c.req.json().catch(() => null))
+  if (!parsed.success) return c.json({ error: 'Invalid profile.' }, 400)
+  const distribution = parsed.data.preferences.distribution
+  if (distribution.priority + distribution.core + distribution.adjacent !== 100) {
+    return c.json({ error: 'Topic distribution must total 100.' }, 400)
+  }
+  await c.env.DB
+    .prepare(
+      `UPDATE learning_profiles
+       SET notification_hour = ?, preferences_json = ?, updated_at = CURRENT_TIMESTAMP
+       WHERE id = 1`,
+    )
+    .bind(parsed.data.notificationHour, JSON.stringify(parsed.data.preferences))
+    .run()
+  return c.json({ saved: true })
+})
+
+app.get('/api/weekly-review', async (c) => {
+  if (!(await hasBrowserSession(c))) return c.json({ error: 'Unauthorized.' }, 401)
+  const countRow = await c.env.DB
+    .prepare("SELECT COUNT(*) AS count FROM lesson_progress WHERE state = 'completed'")
+    .first<{ count: number }>()
+  const completedCount = countRow?.count ?? 0
+  const milestone = Math.floor(completedCount / 7) * 7
+  if (milestone < 7) return c.json({ available: false, completedCount })
+
+  await c.env.DB
+    .prepare(
+      `INSERT OR IGNORE INTO weekly_reviews (completion_number, status)
+       VALUES (?, 'available')`,
+    )
+    .bind(milestone)
+    .run()
+  const review = await c.env.DB
+    .prepare('SELECT id, status FROM weekly_reviews WHERE completion_number = ?')
+    .bind(milestone)
+    .first<{ id: number; status: string }>()
+  const questions = await c.env.DB
+    .prepare(
+      `SELECT q.id, q.prompt, q.options_json, l.title
+       FROM quiz_questions q
+       JOIN lessons l ON l.id = q.lesson_id
+       JOIN lesson_progress p ON p.lesson_id = l.id
+       LEFT JOIN review_schedule rs ON rs.lesson_id = l.id AND rs.reviewed_at IS NULL
+       WHERE p.state = 'completed' OR p.review_only = 1
+       ORDER BY CASE WHEN rs.reason = 'incorrect_answer' THEN 0 ELSE 1 END,
+                (SELECT COUNT(*) FROM quiz_attempts a WHERE a.question_id = q.id AND a.correct = 0) DESC,
+                p.updated_at DESC
+       LIMIT 5`,
+    )
+    .all<{ id: number; prompt: string; options_json: string; title: string }>()
+  return c.json({
+    available: review?.status !== 'completed',
+    reviewId: review?.id,
+    status: review?.status,
+    completedCount,
+    questions: questions.results.map((question) => ({
+      id: question.id,
+      title: question.title,
+      prompt: question.prompt,
+      options: JSON.parse(question.options_json),
+    })),
+  })
+})
+
+app.post('/api/weekly-review/:id/complete', async (c) => {
+  if (!(await hasBrowserSession(c))) return c.json({ error: 'Unauthorized.' }, 401)
+  const reviewId = Number(c.req.param('id'))
+  if (!Number.isInteger(reviewId)) return c.json({ error: 'Invalid review id.' }, 400)
+  const result = await c.env.DB
+    .prepare("UPDATE weekly_reviews SET status = 'completed' WHERE id = ?")
+    .bind(reviewId)
+    .run()
+  return result.meta.changes === 1 ? c.json({ status: 'completed' }) : c.json({ error: 'Review not found.' }, 404)
+})
+
+app.post('/api/weekly-review/:reviewId/questions/:questionId/answer', async (c) => {
+  if (!(await hasBrowserSession(c))) return c.json({ error: 'Unauthorized.' }, 401)
+  const reviewId = Number(c.req.param('reviewId'))
+  const questionId = Number(c.req.param('questionId'))
+  const parsed = z
+    .object({ answer: z.string().min(1).max(200) })
+    .safeParse(await c.req.json().catch(() => null))
+  if (!Number.isInteger(reviewId) || !Number.isInteger(questionId) || !parsed.success) {
+    return c.json({ error: 'Invalid request.' }, 400)
+  }
+  const review = await c.env.DB
+    .prepare("SELECT 1 FROM weekly_reviews WHERE id = ? AND status IN ('available', 'opened')")
+    .bind(reviewId)
+    .first()
+  if (!review) return c.json({ error: 'Weekly review is unavailable.' }, 409)
+  const question = await c.env.DB
+    .prepare(
+      `SELECT q.correct_answer, q.explanation
+       FROM quiz_questions q JOIN lesson_progress p ON p.lesson_id = q.lesson_id
+       WHERE q.id = ? AND (p.state = 'completed' OR p.review_only = 1)`,
+    )
+    .bind(questionId)
+    .first<{ correct_answer: string; explanation: string }>()
+  if (!question) return c.json({ error: 'Question not found.' }, 404)
+  const correct = parsed.data.answer === question.correct_answer
+  await c.env.DB.batch([
+    c.env.DB
+      .prepare('INSERT INTO quiz_attempts (question_id, answer, correct) VALUES (?, ?, ?)')
+      .bind(questionId, parsed.data.answer, correct ? 1 : 0),
+    c.env.DB.prepare("UPDATE weekly_reviews SET status = 'opened' WHERE id = ?").bind(reviewId),
+  ])
+  return c.json({ correct, explanation: question.explanation })
 })
 
 app.notFound((c) => c.json({ error: 'Not found.' }, 404))

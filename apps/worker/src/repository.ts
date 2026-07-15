@@ -60,16 +60,16 @@ export async function transitionLessonState(
   lessonId: number,
   allowedFrom: LessonState[],
   state: LessonState,
-  reviewOnly = false,
+  reviewOnly?: boolean,
 ): Promise<boolean> {
   const placeholders = allowedFrom.map(() => '?').join(', ')
   const result = await db
     .prepare(
       `UPDATE lesson_progress
-       SET state = ?, review_only = ?, updated_at = CURRENT_TIMESTAMP
+       SET state = ?, review_only = COALESCE(?, review_only), updated_at = CURRENT_TIMESTAMP
        WHERE lesson_id = ? AND state IN (${placeholders})`,
     )
-    .bind(state, reviewOnly ? 1 : 0, lessonId, ...allowedFrom)
+    .bind(state, reviewOnly === undefined ? null : reviewOnly ? 1 : 0, lessonId, ...allowedFrom)
     .run()
   return result.meta.changes === 1
 }

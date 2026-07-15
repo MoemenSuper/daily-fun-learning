@@ -4,7 +4,9 @@ A private, lightweight learning app designed to deliver one calm computer-scienc
 
 ## Current status
 
-The local vertical slice is working: one seeded lesson, Africa/Tunis delivery timing, same-day duplicate prevention, ignored-lesson repetition, a React lesson view, a deep explanation, and a comprehension check. It is intentionally **not ready for public deployment** until device authentication and single-use browser sessions are complete.
+The complete local curriculum flow is working: 14 sourced lessons across related theory and practice phases, Africa/Tunis delivery timing, duplicate prevention, ignored-lesson repetition, deep explanations, quizzes with feedback, review later, weekly reviews, profile editing, device authentication, and single-use browser sessions.
+
+It is intentionally **not deployed yet**. The native Windows notification client, installer, resource measurements, and final security verification must be completed first.
 
 ## Architecture
 

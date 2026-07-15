@@ -26,7 +26,7 @@ quiz_pending --------> completed -> scheduled_for_review (incorrect answer)
 
 ## Authentication boundary
 
-Before cloud deployment, the local vertical slice is intentionally accessible only on localhost. Production deployment is blocked until device registration, hashed credential verification, single-use opening tokens, and HTTP-only sessions are implemented and tested. This avoids disguising a development bypass as production security.
+Production API calls from the notification client require a registered device ID and a high-entropy credential. D1 stores only its SHA-256 hash. Clicking a notification creates a five-minute, single-use opening token; exchanging it creates a 12-hour Secure, HTTP-only, SameSite session cookie. The localhost development command uses an explicit browser-session bypass, while the default Wrangler configuration remains in production mode.
 
 ## Deliberately deferred
 
@@ -34,4 +34,3 @@ Before cloud deployment, the local vertical slice is intentionally accessible on
 - No R2, queues, cron triggers, local server, or background agent.
 - No multi-user abstractions.
 - Repository exercises are curated records, not continuous GitHub scanning.
-
