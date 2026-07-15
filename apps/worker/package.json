@@ -1,0 +1,25 @@
+{
+  "name": "@daily-learning/worker",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "build": "wrangler deploy --dry-run --outdir ../../dist/worker",
+    "dev": "wrangler dev",
+    "typecheck": "tsc -p tsconfig.json",
+    "test": "vitest run",
+    "db:migrate:local": "wrangler d1 migrations apply daily-learning-guide --local",
+    "db:seed:local": "wrangler d1 execute daily-learning-guide --local --file=../../scripts/seed.sql"
+  },
+  "dependencies": {
+    "hono": "4.12.30",
+    "zod": "4.4.3"
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "5.20260715.1",
+    "typescript": "7.0.2",
+    "vitest": "4.1.10",
+    "wrangler": "4.111.0"
+  }
+}
+

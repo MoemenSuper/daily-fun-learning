@@ -1,0 +1,21 @@
+{
+  "name": "daily-fun-learning",
+  "private": true,
+  "version": "0.1.0",
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "scripts": {
+    "build": "npm run build --workspace @daily-learning/web && npm run build --workspace @daily-learning/worker",
+    "dev": "npm run dev --workspace @daily-learning/worker",
+    "typecheck": "npm run typecheck --workspaces --if-present",
+    "test": "npm run test --workspaces --if-present",
+    "db:migrate:local": "npm run db:migrate:local --workspace @daily-learning/worker",
+    "db:seed:local": "npm run db:seed:local --workspace @daily-learning/worker"
+  },
+  "engines": {
+    "node": ">=22.12.0"
+  }
+}
+

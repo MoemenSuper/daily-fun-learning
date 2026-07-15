@@ -1,0 +1,24 @@
+{
+  "$schema": "../../node_modules/wrangler/config-schema.json",
+  "name": "daily-fun-learning",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-07-15",
+  "vars": {
+    "ENVIRONMENT": "development"
+  },
+  "assets": {
+    "directory": "../web/dist",
+    "binding": "ASSETS",
+    "not_found_handling": "single-page-application",
+    "run_worker_first": ["/api/*"]
+  },
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "daily-learning-guide",
+      "database_id": "local",
+      "migrations_dir": "../../migrations"
+    }
+  ]
+}
+
