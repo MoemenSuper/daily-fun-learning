@@ -320,10 +320,14 @@ app.get('/api/profile', async (c) => {
     .prepare('SELECT timezone, notification_hour, preferences_json FROM learning_profiles WHERE id = 1')
     .first<{ timezone: string; notification_hour: number; preferences_json: string }>()
   if (!profile) return c.json({ error: 'Profile not found.' }, 404)
+  const topics = await c.env.DB
+    .prepare('SELECT slug, name, category, weight FROM topics ORDER BY category, weight DESC, name')
+    .all()
   return c.json({
     timezone: profile.timezone,
     notificationHour: profile.notification_hour,
     preferences: JSON.parse(profile.preferences_json),
+    topics: topics.results,
   })
 })
 
@@ -341,9 +345,14 @@ app.put('/api/profile', async (c) => {
         concreteExamples: z.boolean(),
         explainCausalSteps: z.boolean(),
         clarityOverBrevity: z.boolean(),
+        avoidInformationOverload: z.boolean(),
         codeLiteracyGoal: z.boolean(),
+        codeNavigationGoal: z.boolean(),
+        userControl: z.boolean(),
+        noStreaks: z.literal(true),
         gamification: z.literal(false),
       }),
+      topics: z.array(z.object({ slug: z.string().min(1).max(100), weight: z.number().int().min(0).max(100) })).max(100),
     })
     .safeParse(await c.req.json().catch(() => null))
   if (!parsed.success) return c.json({ error: 'Invalid profile.' }, 400)
@@ -351,14 +360,38 @@ app.put('/api/profile', async (c) => {
   if (distribution.priority + distribution.core + distribution.adjacent !== 100) {
     return c.json({ error: 'Topic distribution must total 100.' }, 400)
   }
-  await c.env.DB
-    .prepare(
-      `UPDATE learning_profiles
-       SET notification_hour = ?, preferences_json = ?, updated_at = CURRENT_TIMESTAMP
-       WHERE id = 1`,
-    )
-    .bind(parsed.data.notificationHour, JSON.stringify(parsed.data.preferences))
-    .run()
+  const storedTopics = await c.env.DB
+    .prepare('SELECT slug, category FROM topics')
+    .all<{ slug: string; category: 'priority' | 'core' | 'adjacent' }>()
+  const submittedWeights = new Map(parsed.data.topics.map((topic) => [topic.slug, topic.weight]))
+  if (submittedWeights.size !== storedTopics.results.length || parsed.data.topics.length !== storedTopics.results.length) {
+    return c.json({ error: 'Every known topic must have one weight.' }, 400)
+  }
+  const totals = { priority: 0, core: 0, adjacent: 0 }
+  for (const topic of storedTopics.results) {
+    const weight = submittedWeights.get(topic.slug)
+    if (weight === undefined) return c.json({ error: `Unknown or missing topic: ${topic.slug}.` }, 400)
+    totals[topic.category] += weight
+  }
+  if (
+    totals.priority !== distribution.priority ||
+    totals.core !== distribution.core ||
+    totals.adjacent !== distribution.adjacent
+  ) {
+    return c.json({ error: 'Topic weights must match the category distribution.' }, 400)
+  }
+  await c.env.DB.batch([
+    c.env.DB
+      .prepare(
+        `UPDATE learning_profiles
+         SET notification_hour = ?, preferences_json = ?, updated_at = CURRENT_TIMESTAMP
+         WHERE id = 1`,
+      )
+      .bind(parsed.data.notificationHour, JSON.stringify(parsed.data.preferences)),
+    ...parsed.data.topics.map((topic) =>
+      c.env.DB.prepare('UPDATE topics SET weight = ? WHERE slug = ?').bind(topic.weight, topic.slug),
+    ),
+  ])
   return c.json({ saved: true })
 })
 

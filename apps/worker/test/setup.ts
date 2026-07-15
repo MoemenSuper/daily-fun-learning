@@ -13,10 +13,16 @@ await applyD1Migrations(testEnv.DB, testEnv.TEST_MIGRATIONS)
 await testEnv.DB.batch([
   testEnv.DB
     .prepare('INSERT INTO learning_profiles (id, preferences_json) VALUES (1, ?)')
-    .bind('{"distribution":{"priority":60,"core":25,"adjacent":15},"concreteExamples":true,"explainCausalSteps":true,"clarityOverBrevity":true,"codeLiteracyGoal":true,"gamification":false}'),
+    .bind('{"distribution":{"priority":60,"core":25,"adjacent":15},"concreteExamples":true,"explainCausalSteps":true,"clarityOverBrevity":true,"avoidInformationOverload":true,"codeLiteracyGoal":true,"codeNavigationGoal":true,"userControl":true,"noStreaks":true,"gamification":false}'),
   testEnv.DB
     .prepare('INSERT INTO topics (slug, name, category, weight) VALUES (?, ?, ?, ?)')
     .bind('javascript-async', 'Asynchronous JavaScript', 'priority', 60),
+  testEnv.DB
+    .prepare('INSERT INTO topics (slug, name, category, weight) VALUES (?, ?, ?, ?)')
+    .bind('computer-science-core', 'Computer science core', 'core', 25),
+  testEnv.DB
+    .prepare('INSERT INTO topics (slug, name, category, weight) VALUES (?, ?, ?, ?)')
+    .bind('useful-adjacent', 'Useful adjacent knowledge', 'adjacent', 15),
   testEnv.DB
     .prepare('INSERT INTO learning_paths (slug, title, phase, active) VALUES (?, ?, ?, 1)')
     .bind('async-javascript-theory', 'How asynchronous JavaScript really flows', 'theory'),
@@ -24,7 +30,8 @@ await testEnv.DB.batch([
 await testEnv.DB.prepare(
   `INSERT INTO lessons (path_id, topic_id, slug, title, summary, deep_explanation, sequence, published)
    SELECT p.id, t.id, ?, ?, ?, ?, 1, 1
-   FROM learning_paths p, topics t`,
+   FROM learning_paths p, topics t
+   WHERE t.slug = 'javascript-async'`,
 )
   .bind(
     'functions-as-values',

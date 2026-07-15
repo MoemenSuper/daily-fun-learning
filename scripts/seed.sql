@@ -1,15 +1,40 @@
 INSERT OR REPLACE INTO learning_profiles (id, preferences_json)
-VALUES (1, '{"distribution":{"priority":60,"core":25,"adjacent":15},"concreteExamples":true,"explainCausalSteps":true,"clarityOverBrevity":true,"codeLiteracyGoal":true,"gamification":false}');
+VALUES (1, '{"distribution":{"priority":60,"core":25,"adjacent":15},"concreteExamples":true,"explainCausalSteps":true,"clarityOverBrevity":true,"avoidInformationOverload":true,"codeLiteracyGoal":true,"codeNavigationGoal":true,"userControl":true,"noStreaks":true,"gamification":false}');
 
-INSERT OR IGNORE INTO topics (slug, name, category, weight) VALUES
-  ('javascript-async', 'Asynchronous JavaScript', 'priority', 40),
-  ('node-express', 'Node.js and Express', 'priority', 20),
-  ('databases', 'Databases', 'core', 8),
-  ('networking', 'Networking', 'core', 7),
-  ('git', 'Git', 'core', 5),
-  ('architecture', 'Software Architecture', 'core', 5),
-  ('security', 'Security', 'adjacent', 8),
-  ('operating-systems', 'Operating Systems', 'adjacent', 7);
+INSERT INTO topics (slug, name, category, weight) VALUES
+  ('rag', 'RAG', 'priority', 8),
+  ('embeddings', 'Embeddings', 'priority', 6),
+  ('vector-databases', 'Vector databases', 'priority', 5),
+  ('neo4j', 'Neo4j', 'priority', 4),
+  ('graphrag', 'GraphRAG', 'priority', 5),
+  ('python', 'Python', 'priority', 5),
+  ('fastapi', 'FastAPI', 'priority', 4),
+  ('rest-apis', 'REST APIs', 'priority', 4),
+  ('http', 'HTTP and web API behavior', 'priority', 4),
+  ('express', 'Express', 'priority', 4),
+  ('nodejs', 'Node.js', 'priority', 3),
+  ('javascript-async', 'JavaScript asynchronous programming', 'priority', 4),
+  ('functions-as-values', 'Functions passed as values', 'priority', 1),
+  ('callbacks', 'Callback functions', 'priority', 1),
+  ('promises', 'Promises', 'priority', 1),
+  ('async-await', 'async and await', 'priority', 1),
+  ('node-express', 'Node.js and Express practice', 'priority', 0),
+  ('databases', 'Databases', 'core', 4),
+  ('networking', 'Networking', 'core', 4),
+  ('git', 'Git', 'core', 3),
+  ('java', 'Java', 'core', 3),
+  ('architecture', 'Software architecture', 'core', 4),
+  ('operating-systems', 'Operating systems', 'core', 3),
+  ('security', 'Security', 'core', 2),
+  ('algorithms', 'Algorithms', 'core', 2),
+  ('compilers', 'Compilers', 'adjacent', 4),
+  ('distributed-systems', 'Distributed systems', 'adjacent', 4),
+  ('web-standards', 'Web standards', 'adjacent', 4),
+  ('observability', 'Observability', 'adjacent', 3)
+ON CONFLICT(slug) DO UPDATE SET
+  name = excluded.name,
+  category = excluded.category,
+  weight = excluded.weight;
 
 INSERT OR IGNORE INTO learning_paths (slug, title, phase, active) VALUES
   ('async-javascript-theory', 'How asynchronous JavaScript really flows', 'theory', 1),

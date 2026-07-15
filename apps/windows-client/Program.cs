@@ -123,6 +123,7 @@ internal static class Program
             .AddArgument("action", "open")
             .AddText(title)
             .AddText(body)
+            .MuteAudio()
             .BuildNotification();
         notification.ExpiresOnReboot = true;
         manager.Show(notification);

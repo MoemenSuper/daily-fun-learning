@@ -65,6 +65,10 @@ summary { cursor: pointer; font-size: 1.15rem; font-weight: 700; }
 label { display: grid; gap: 8px; font-weight: 650; text-transform: capitalize; }
 select, input { min-width: 140px; border: 1px solid #a8aa9e; border-radius: 10px; padding: 10px 12px; background: #fffdf8; color: inherit; font: inherit; }
 .form-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 20px; margin: 32px 0; }
+.topic-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 16px; }
+.preference-list { display: grid; gap: 14px; margin-top: 20px; }
+.check-label { display: flex; align-items: center; gap: 10px; font-weight: 500; text-transform: none; }
+.check-label input { min-width: auto; }
 
 @media (max-width: 560px) {
   main { padding-top: 48px; }

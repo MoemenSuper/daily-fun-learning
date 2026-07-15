@@ -52,7 +52,7 @@ export function App() {
 
 function TodayLesson() {
   const [data, setData] = useState<LessonResponse | null>(null)
-  const [view, setView] = useState<'lesson' | 'deep' | 'quiz' | 'feedback'>('lesson')
+  const [view, setView] = useState<'lesson' | 'deep' | 'quiz' | 'feedback' | 'saved'>('lesson')
   const [feedback, setFeedback] = useState<{ correct: boolean; explanation: string } | null>(null)
   const [message, setMessage] = useState('')
 
@@ -69,7 +69,10 @@ function TodayLesson() {
         body: JSON.stringify({ action }),
       })
       if (action === 'understand') setView('quiz')
-      else setMessage('Saved for later. Your main learning path can continue.')
+      else {
+        setMessage('Saved for later. Your main learning path can continue.')
+        setView('saved')
+      }
     } catch (error) {
       setMessage(error instanceof Error ? error.message : 'Your choice could not be saved.')
     }
@@ -131,7 +134,8 @@ function TodayLesson() {
       )}
       {view === 'quiz' && data.quiz && <QuizChoices quiz={data.quiz} onAnswer={answer} onUnknown={() => void chooseAction('review_later')} />}
       {view === 'feedback' && feedback && <Feedback feedback={feedback} />}
-      {message && <p className="notice" role="status">{message}</p>}
+      {view === 'saved' && <section><h2>No pressure.</h2><p className="lead">This lesson is waiting in Review later. The next daily lesson is still available on schedule.</p></section>}
+      {message && view !== 'saved' && <p className="notice" role="status">{message}</p>}
     </main>
   )
 }
@@ -234,23 +238,100 @@ function WeeklyReview() {
 }
 
 function Profile() {
-  interface Preferences { distribution: { priority: number; core: number; adjacent: number }; concreteExamples: boolean; explainCausalSteps: boolean; clarityOverBrevity: boolean; codeLiteracyGoal: boolean; gamification: false }
+  interface Preferences {
+    distribution: { priority: number; core: number; adjacent: number }
+    concreteExamples: boolean
+    explainCausalSteps: boolean
+    clarityOverBrevity: boolean
+    avoidInformationOverload: boolean
+    codeLiteracyGoal: boolean
+    codeNavigationGoal: boolean
+    userControl: boolean
+    noStreaks: true
+    gamification: false
+  }
+  interface Topic { slug: string; name: string; category: 'priority' | 'core' | 'adjacent'; weight: number }
   const [hour, setHour] = useState(8)
   const [preferences, setPreferences] = useState<Preferences | null>(null)
+  const [topics, setTopics] = useState<Topic[]>([])
   const [message, setMessage] = useState('Loading profile…')
 
   useEffect(() => {
-    requestJson<{ notificationHour: number; preferences: Preferences }>('/api/profile').then((body) => { setHour(body.notificationHour); setPreferences(body.preferences); setMessage('') }).catch((error: Error) => setMessage(error.message))
+    requestJson<{ notificationHour: number; preferences: Preferences; topics: Topic[] }>('/api/profile')
+      .then((body) => { setHour(body.notificationHour); setPreferences(body.preferences); setTopics(body.topics); setMessage('') })
+      .catch((error: Error) => setMessage(error.message))
   }, [])
 
   async function save() {
     if (!preferences) return
-    await requestJson('/api/profile', { method: 'PUT', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ notificationHour: hour, preferences }) })
-    setMessage('Profile saved.')
+    try {
+      await requestJson('/api/profile', {
+        method: 'PUT',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          notificationHour: hour,
+          preferences,
+          topics: topics.map(({ slug, weight }) => ({ slug, weight })),
+        }),
+      })
+      setMessage('Profile saved.')
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : 'The profile could not be saved.')
+    }
   }
 
   if (!preferences) return <PageMessage message={message} />
-  return <main><p className="eyebrow">Profile</p><h1>How this guide teaches</h1><p className="lead">The curriculum favors current priorities while keeping core computer science and useful adjacent discoveries in view.</p><div className="form-grid"><label>Notification hour<input type="number" min="0" max="23" value={hour} onChange={(event) => setHour(Number(event.target.value))} /></label>{Object.entries(preferences.distribution).map(([key, value]) => <label key={key}>{key}<input type="number" min="0" max="100" value={value} onChange={(event) => setPreferences({ ...preferences, distribution: { ...preferences.distribution, [key]: Number(event.target.value) } })} /></label>)}</div><p>Topic percentages must total 100. Concrete examples, causal steps, readable depth, and code literacy remain enabled; gamification remains off.</p><button className="primary" onClick={() => void save()}>Save profile</button>{message && <p className="notice">{message}</p>}</main>
+  const editablePreferences = [
+    ['concreteExamples', 'Require concrete examples'],
+    ['explainCausalSteps', 'Explain hidden causal steps'],
+    ['clarityOverBrevity', 'Prefer clarity over extreme brevity'],
+    ['avoidInformationOverload', 'Avoid information overload'],
+    ['codeLiteracyGoal', 'Prioritize code literacy'],
+    ['codeNavigationGoal', 'Practice navigating unfamiliar code'],
+    ['userControl', 'Keep the learner in control'],
+  ] as const
+
+  return (
+    <main>
+      <p className="eyebrow">Profile</p>
+      <h1>How this guide teaches</h1>
+      <p className="lead">The curriculum favors current priorities while keeping core computer science and useful adjacent discoveries in view.</p>
+      <div className="form-grid">
+        <label>Notification hour<input type="number" min="0" max="23" value={hour} onChange={(event) => setHour(Number(event.target.value))} /></label>
+        {Object.entries(preferences.distribution).map(([key, value]) => (
+          <label key={key}>{key}<input type="number" min="0" max="100" value={value} onChange={(event) => setPreferences({ ...preferences, distribution: { ...preferences.distribution, [key]: Number(event.target.value) } })} /></label>
+        ))}
+      </div>
+      <details>
+        <summary>Teaching preferences</summary>
+        <div className="preference-list">
+          {editablePreferences.map(([key, label]) => (
+            <label className="check-label" key={key}>
+              <input type="checkbox" checked={preferences[key]} onChange={(event) => setPreferences({ ...preferences, [key]: event.target.checked })} />
+              {label}
+            </label>
+          ))}
+        </div>
+        <p>Streaks and gamification remain disabled.</p>
+      </details>
+      <details>
+        <summary>Edit topic priorities</summary>
+        {(['priority', 'core', 'adjacent'] as const).map((category) => (
+          <section key={category}>
+            <h2>{category}</h2>
+            <div className="topic-grid">
+              {topics.filter((topic) => topic.category === category).map((topic) => (
+                <label key={topic.slug}>{topic.name}<input type="number" min="0" max="100" value={topic.weight} onChange={(event) => setTopics(topics.map((candidate) => candidate.slug === topic.slug ? { ...candidate, weight: Number(event.target.value) } : candidate))} /></label>
+              ))}
+            </div>
+          </section>
+        ))}
+      </details>
+      <p>Category percentages must total 100, and topic weights within each category must match its percentage.</p>
+      <button className="primary" onClick={() => void save()}>Save profile</button>
+      {message && <p className="notice">{message}</p>}
+    </main>
+  )
 }
 
 function QuizChoices({ quiz, onAnswer, onUnknown }: { quiz: Quiz; onAnswer: (value: string) => Promise<void>; onUnknown?: () => void }) {

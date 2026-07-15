@@ -74,6 +74,64 @@ describe('private device authentication', () => {
     expect(response.status).toBe(401)
   })
 
+  it('loads and saves the complete learning profile', async () => {
+    const cookie = await createBrowserSession()
+    const response = await app.request('/api/profile', { headers: { cookie } }, testEnv)
+    expect(response.status).toBe(200)
+    const profile = (await response.json()) as {
+      notificationHour: number
+      preferences: Record<string, unknown>
+      topics: Array<{ slug: string; category: string; weight: number }>
+    }
+    expect(profile.topics).toHaveLength(3)
+    expect(profile.preferences).toMatchObject({
+      avoidInformationOverload: true,
+      codeNavigationGoal: true,
+      userControl: true,
+      noStreaks: true,
+      gamification: false,
+    })
+
+    const save = await app.request(
+      '/api/profile',
+      {
+        method: 'PUT',
+        headers: { cookie, 'content-type': 'application/json' },
+        body: JSON.stringify({
+          notificationHour: 9,
+          preferences: profile.preferences,
+          topics: profile.topics.map(({ slug, weight }) => ({ slug, weight })),
+        }),
+      },
+      testEnv,
+    )
+    expect(save.status).toBe(200)
+    expect(await save.json()).toEqual({ saved: true })
+    expect(
+      await testEnv.DB.prepare('SELECT notification_hour FROM learning_profiles WHERE id = 1').first(),
+    ).toMatchObject({ notification_hour: 9 })
+
+    const invalidTopics = profile.topics.map(({ slug, weight, category }) => ({
+      slug,
+      weight: category === 'priority' ? Math.max(0, weight - 1) : weight,
+    }))
+    const invalidSave = await app.request(
+      '/api/profile',
+      {
+        method: 'PUT',
+        headers: { cookie, 'content-type': 'application/json' },
+        body: JSON.stringify({
+          notificationHour: 9,
+          preferences: profile.preferences,
+          topics: invalidTopics,
+        }),
+      },
+      testEnv,
+    )
+    expect(invalidSave.status).toBe(400)
+    expect(await invalidSave.json()).toEqual({ error: 'Topic weights must match the category distribution.' })
+  })
+
   it('authenticates delivery checks and prevents a duplicate claim', async () => {
     expect((await registerDevice()).status).toBe(201)
     const request = () =>
