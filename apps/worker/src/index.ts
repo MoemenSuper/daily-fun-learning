@@ -4,6 +4,7 @@ import { z } from 'zod'
 import { authenticatedDeviceId, constantTimeEqual, hasBrowserSession, randomToken, sha256 } from './auth'
 import { isNotificationDue, learningDate } from './learning-day'
 import { claimDailyDelivery, getCurrentLesson, transitionLessonState } from './repository'
+import { allowRequest } from './rate-limit'
 import type { Bindings } from './types'
 
 const app = new Hono<{ Bindings: Bindings }>()
@@ -11,6 +12,10 @@ const app = new Hono<{ Bindings: Bindings }>()
 app.get('/api/health', (c) => c.json({ ok: true }))
 
 app.post('/api/devices/register', async (c) => {
+  const clientAddress = c.req.header('cf-connecting-ip') ?? 'local'
+  if (!(await allowRequest(c.env.DB, `register:${clientAddress}`, 5, 15 * 60))) {
+    return c.json({ error: 'Too many registration attempts. Try again later.' }, 429)
+  }
   const suppliedSecret = c.req.header('authorization')?.replace(/^Bearer /, '') ?? ''
   if (
     !c.env.DEVICE_REGISTRATION_SECRET ||
@@ -23,6 +28,7 @@ app.post('/api/devices/register', async (c) => {
     .object({
       deviceId: z.string().regex(/^[a-zA-Z0-9_-]{1,64}$/),
       credential: z.string().min(43).max(200),
+      reset: z.boolean().optional().default(false),
     })
     .safeParse(await c.req.json().catch(() => null))
   if (!parsed.success) return c.json({ error: 'Invalid request.' }, 400)
@@ -34,6 +40,13 @@ app.post('/api/devices/register', async (c) => {
       .bind(parsed.data.deviceId, credentialHash)
       .run()
   } catch {
+    if (parsed.data.reset) {
+      await c.env.DB
+        .prepare('UPDATE devices SET credential_hash = ?, revoked_at = NULL WHERE id = ?')
+        .bind(credentialHash, parsed.data.deviceId)
+        .run()
+      return c.json({ deviceId: parsed.data.deviceId, reset: true })
+    }
     return c.json({ error: 'Device already exists.' }, 409)
   }
   return c.json({ deviceId: parsed.data.deviceId }, 201)
@@ -74,6 +87,9 @@ app.get('/open', async (c) => {
 app.post('/api/opening-tokens', async (c) => {
   const deviceId = await authenticatedDeviceId(c)
   if (!deviceId) return c.json({ error: 'Unauthorized.' }, 401)
+  if (!(await allowRequest(c.env.DB, `opening-token:${deviceId}`, 10, 60))) {
+    return c.json({ error: 'Too many opening-link requests. Try again later.' }, 429)
+  }
   const lesson = await getCurrentLesson(c.env.DB)
   if (!lesson) return c.json({ error: 'No active lesson.' }, 404)
 
@@ -135,6 +151,9 @@ app.post('/api/delivery/check', async (c) => {
     const authenticatedId = await authenticatedDeviceId(c)
     if (!authenticatedId || authenticatedId !== body.data.deviceId) {
       return c.json({ error: 'Unauthorized.' }, 401)
+    }
+    if (!(await allowRequest(c.env.DB, `delivery:${authenticatedId}`, 12, 60))) {
+      return c.json({ error: 'Too many delivery checks. Try again later.' }, 429)
     }
   }
 

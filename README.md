@@ -6,7 +6,7 @@ A private, lightweight learning app designed to deliver one calm computer-scienc
 
 The complete local curriculum flow is working: 14 sourced lessons across related theory and practice phases, Africa/Tunis delivery timing, duplicate prevention, ignored-lesson repetition, deep explanations, quizzes with feedback, review later, weekly reviews, profile editing, device authentication, and single-use browser sessions.
 
-It is intentionally **not deployed yet**. The native Windows notification client, installer, resource measurements, and final security verification must be completed first.
+It is intentionally **not deployed yet**. Local implementation and resource measurements are complete; Cloudflare browser authorization, production smoke tests, and final Windows installation remain.
 
 ## Architecture
 
@@ -14,9 +14,10 @@ It is intentionally **not deployed yet**. The native Windows notification client
 - Hono on Cloudflare Workers for the API
 - Cloudflare D1 for lessons, progress, delivery claims, quizzes, and reviews
 - One Worker Static Assets deployment for both UI and API
-- A future short-lived C# Windows notification client launched by Task Scheduler
+- A short-lived C# Windows notification client launched by Task Scheduler
 
 See [docs/architecture.md](docs/architecture.md) for runtime ownership and state transitions.
+See [docs/windows-client.md](docs/windows-client.md) for installation and notification testing, and [docs/resource-measurements.md](docs/resource-measurements.md) for measured footprint and runtime use.
 
 ## Prerequisites
 
@@ -43,6 +44,7 @@ Run verification:
 npm run typecheck
 npm test
 npm run build
+.\scripts\publish-windows.ps1
 ```
 
 ## Cloudflare account setup
@@ -55,13 +57,14 @@ No dashboard setup is needed yet. Once production authentication is implemented 
 4. Apply migrations and seed content to the remote database.
 5. Deploy the Worker and its static assets.
 
-These steps must not be run against the cloud yet. The present local-only API does not contain the production authentication boundary.
+The deployment steps are performed only after the complete local test suite passes. The default Worker configuration enforces production authentication; only `npm run dev` opts into the localhost browser-session bypass.
 
 ## Repository layout
 
 ```text
 apps/web/       React lesson interface
 apps/worker/    Hono API and Worker configuration
+apps/windows-client/  Short-lived native C# notification client
 docs/           Architecture and operating documentation
 migrations/     Ordered D1 schema migrations
 scripts/        Repeatable seed data

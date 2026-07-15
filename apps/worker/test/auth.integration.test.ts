@@ -42,6 +42,7 @@ describe('private device authentication', () => {
       testEnv.DB.prepare('DELETE FROM quiz_attempts'),
       testEnv.DB.prepare('DELETE FROM review_schedule'),
       testEnv.DB.prepare('DELETE FROM weekly_reviews'),
+      testEnv.DB.prepare('DELETE FROM request_limits'),
       testEnv.DB.prepare('DELETE FROM browser_sessions'),
       testEnv.DB.prepare('DELETE FROM opening_tokens'),
       testEnv.DB.prepare('DELETE FROM daily_deliveries'),
