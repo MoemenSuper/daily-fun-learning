@@ -18,6 +18,7 @@ It is intentionally **not deployed yet**. Local implementation and resource meas
 
 See [docs/architecture.md](docs/architecture.md) for runtime ownership and state transitions.
 See [docs/windows-client.md](docs/windows-client.md) for installation and notification testing, and [docs/resource-measurements.md](docs/resource-measurements.md) for measured footprint and runtime use.
+See [docs/cloudflare.md](docs/cloudflare.md) for deployment, production checks, D1 backup, and troubleshooting.
 
 ## Prerequisites
 

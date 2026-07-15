@@ -39,6 +39,16 @@ h2 { margin-top: 48px; font-size: 1.25rem; }
 a { color: #3d5c43; }
 p { line-height: 1.65; }
 pre { white-space: pre-wrap; padding: 24px; border-radius: 14px; background: #22251f; color: #f7f3e9; font: .95rem/1.7 ui-monospace, SFMono-Regular, Consolas, monospace; }
+.code-block { position: relative; }
+.code-block pre { overflow-x: auto; padding: 48px 18px 20px 0; white-space: pre; }
+.copy-code { position: absolute; z-index: 1; top: 10px; right: 10px; border-color: #687064; padding: 6px 11px; color: #f7f3e9; font-size: .78rem; }
+.copy-code:hover, .copy-code:focus-visible { background: #3a3f36; border-color: #aeb8a8; }
+.code-line { display: grid; grid-template-columns: 48px minmax(max-content, 1fr); min-height: 1.7em; }
+.code-line.emphasized { background: rgb(167 188 144 / 16%); }
+.line-number { padding-right: 14px; color: #7f8879; text-align: right; user-select: none; }
+.token-keyword { color: #c9a7ff; }
+.token-string { color: #b9d99e; }
+.token-comment { color: #8f998b; font-style: italic; }
 .actions, .choices { display: flex; flex-wrap: wrap; gap: 12px; margin-top: 40px; }
 button { border: 1px solid #a8aa9e; border-radius: 999px; padding: 12px 18px; background: transparent; color: inherit; font: inherit; cursor: pointer; }
 button:hover, button:focus-visible { border-color: #405342; outline: 2px solid transparent; background: #e9e5da; }

@@ -158,7 +158,13 @@ app.post('/api/delivery/check', async (c) => {
   }
 
   const now = body.data.now ? new Date(body.data.now) : new Date()
-  if (!isNotificationDue(now)) return c.json({ shouldNotify: false, reason: 'before_nominal_time' })
+  const profile = await c.env.DB
+    .prepare('SELECT notification_hour FROM learning_profiles WHERE id = 1')
+    .first<{ notification_hour: number }>()
+  const notificationHour = profile?.notification_hour ?? 8
+  if (!isNotificationDue(now, notificationHour)) {
+    return c.json({ shouldNotify: false, reason: 'before_nominal_time' })
+  }
 
   const lesson = await getCurrentLesson(c.env.DB)
   if (!lesson) return c.json({ shouldNotify: false, reason: 'no_lesson' })

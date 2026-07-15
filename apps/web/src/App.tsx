@@ -106,7 +106,7 @@ function TodayLesson() {
             <section key={section.position}>
               <h2>{section.heading}</h2>
               {section.position === 1 ? (
-                <pre><code>{section.body.replace(/^```js\n|\n```$/g, '')}</code></pre>
+                <CodeBlock code={section.body.replace(/^```js\n|\n```$/g, '')} />
               ) : (
                 <p>{section.body}</p>
               )}
@@ -123,7 +123,7 @@ function TodayLesson() {
       )}
       {view === 'deep' && (
         <section className="deep-sections">
-          <details open><summary>Start with the example</summary><pre><code>{data.sections[0]?.body.replace(/^```js\n|\n```$/g, '')}</code></pre></details>
+          <details open><summary>Start with the example</summary><CodeBlock code={data.sections[0]?.body.replace(/^```js\n|\n```$/g, '') ?? ''} /></details>
           <details open><summary>Follow the values</summary><p>{data.lesson.deepExplanation}</p></details>
           <details><summary>Check your understanding</summary><p>{data.quiz?.prompt}</p></details>
           <button onClick={() => setView('lesson')}>Back to lesson</button>
@@ -267,4 +267,40 @@ function SourceList({ sources }: { sources: LessonResponse['sources'] }) {
 
 function PageMessage({ title, message }: { title?: string; message: string }) {
   return <main>{title && <><p className="eyebrow">{title}</p><h1>{title}</h1></>}<p className="lead" role="status">{message}</p></main>
+}
+
+function CodeBlock({ code, emphasizedLines = [] }: { code: string; emphasizedLines?: number[] }) {
+  const [copied, setCopied] = useState(false)
+
+  async function copy() {
+    await navigator.clipboard.writeText(code)
+    setCopied(true)
+    window.setTimeout(() => setCopied(false), 1500)
+  }
+
+  return (
+    <div className="code-block">
+      <button className="copy-code" onClick={() => void copy()}>{copied ? 'Copied' : 'Copy'}</button>
+      <pre aria-label="JavaScript example"><code>{code.split('\n').map((line, index) => (
+        <span className={`code-line${emphasizedLines.includes(index + 1) ? ' emphasized' : ''}`} key={index}>
+          <span className="line-number" aria-hidden="true">{index + 1}</span>
+          <span>{highlightJavaScript(line)}</span>
+        </span>
+      ))}</code></pre>
+    </div>
+  )
+}
+
+function highlightJavaScript(line: string) {
+  const tokens = line.split(/("(?:\\.|[^"\\])*"|'(?:\\.|[^'\\])*'|`(?:\\.|[^`\\])*`|\/\/.*|\b(?:async|await|const|let|function|return|new|throw|try|catch)\b)/g)
+  return tokens.map((token, index) => {
+    const className = token.startsWith('//')
+      ? 'token-comment'
+      : /^['"`]/.test(token)
+        ? 'token-string'
+        : /^(async|await|const|let|function|return|new|throw|try|catch)$/.test(token)
+          ? 'token-keyword'
+          : undefined
+    return <span className={className} key={index}>{token}</span>
+  })
 }

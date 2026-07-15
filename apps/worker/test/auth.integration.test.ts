@@ -53,6 +53,7 @@ describe('private device authentication', () => {
       .prepare("DELETE FROM quiz_questions WHERE lesson_id IN (SELECT id FROM lessons WHERE slug LIKE 'test-%')")
       .run()
     await testEnv.DB.prepare("DELETE FROM lessons WHERE slug LIKE 'test-%'").run()
+    await testEnv.DB.prepare('UPDATE learning_profiles SET notification_hour = 0 WHERE id = 1').run()
   })
 
   it('rejects registration without the bootstrap secret', async () => {
@@ -245,5 +246,77 @@ describe('private device authentication', () => {
       testEnv,
     )
     expect(await delivery.json()).toMatchObject({ shouldNotify: true })
+  })
+
+  it('runs the due-to-incorrect-answer flow end to end', async () => {
+    expect((await registerDevice()).status).toBe(201)
+    const delivery = await app.request(
+      '/api/delivery/check',
+      {
+        method: 'POST',
+        headers: { authorization: deviceAuthorization, 'content-type': 'application/json' },
+        body: JSON.stringify({ deviceId: 'test-device' }),
+      },
+      testEnv,
+    )
+    expect(await delivery.json()).toMatchObject({ shouldNotify: true })
+
+    const tokenResponse = await app.request(
+      '/api/opening-tokens',
+      { method: 'POST', headers: { authorization: deviceAuthorization } },
+      testEnv,
+    )
+    const { url } = (await tokenResponse.json()) as { url: string }
+    const exchange = await app.request(url, undefined, testEnv)
+    const cookie = exchange.headers.get('set-cookie')?.split(';')[0]
+    expect(cookie).toBeTruthy()
+
+    const current = await app.request('/api/lessons/current', { headers: { cookie: cookie! } }, testEnv)
+    const lessonBody = (await current.json()) as {
+      lesson: { id: number; deepExplanation: string }
+      quiz: { id: number }
+    }
+    expect(lessonBody.lesson.deepExplanation).toBeTruthy()
+
+    const understand = await app.request(
+      `/api/lessons/${lessonBody.lesson.id}/action`,
+      {
+        method: 'POST',
+        headers: { cookie: cookie!, 'content-type': 'application/json' },
+        body: JSON.stringify({ action: 'understand' }),
+      },
+      testEnv,
+    )
+    expect(await understand.json()).toMatchObject({ state: 'quiz_pending' })
+
+    const answer = await app.request(
+      `/api/quizzes/${lessonBody.quiz.id}/answer`,
+      {
+        method: 'POST',
+        headers: { cookie: cookie!, 'content-type': 'application/json' },
+        body: JSON.stringify({ answer: 'A result' }),
+      },
+      testEnv,
+    )
+    expect(await answer.json()).toMatchObject({ correct: false, state: 'completed' })
+    expect(
+      await testEnv.DB.prepare('SELECT reason FROM review_schedule WHERE lesson_id = ?')
+        .bind(lessonBody.lesson.id)
+        .first(),
+    ).toMatchObject({ reason: 'incorrect_answer' })
+  })
+
+  it('rejects malformed lesson actions', async () => {
+    const cookie = await createBrowserSession()
+    const response = await app.request(
+      '/api/lessons/1/action',
+      {
+        method: 'POST',
+        headers: { cookie, 'content-type': 'application/json' },
+        body: JSON.stringify({ action: 'complete_without_quiz' }),
+      },
+      testEnv,
+    )
+    expect(response.status).toBe(400)
   })
 })
