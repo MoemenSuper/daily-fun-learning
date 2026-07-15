@@ -2,6 +2,8 @@
 
 The application uses only Workers Free, D1 Free, and Worker Static Assets. It does not require a custom domain, R2, a payment card, or a paid AI service.
 
+Production is deployed at `https://daily-fun-learning.ouerghuimoemej.workers.dev`. The D1 database is in Cloudflare's Eastern Europe region, and the Windows client is installed through the `Daily Learning Guide` scheduled task.
+
 ## First deployment
 
 From the repository root:
@@ -22,7 +24,7 @@ Approve only the Cloudflare browser authorization. The deployment script then:
 4. applies ordered migrations remotely;
 5. seeds the 14-lesson curriculum idempotently;
 6. deploys the Worker and React static assets;
-7. uploads the registration secret without writing it to disk or Git.
+7. uploads the registration secret through a randomly named temporary JSON file, removes that file in `finally`, and never writes it to the repository or Git.
 
 Use the `workers.dev` URL printed by Wrangler when running `scripts\install-windows.ps1`.
 
@@ -84,4 +86,3 @@ npx wrangler secret delete DEVICE_REGISTRATION_SECRET
 ```
 
 To reset later, upload a new temporary secret, run `scripts\reset-device.ps1` with the same value, then delete the Worker secret again.
-

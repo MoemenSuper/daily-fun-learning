@@ -16,7 +16,7 @@
     {
       "binding": "DB",
       "database_name": "daily-learning-guide",
-      "database_id": "local",
+      "database_id": "78ba7b82-3b56-4cd1-b9e0-caea8a0a0456",
       "migrations_dir": "../../migrations"
     }
   ]

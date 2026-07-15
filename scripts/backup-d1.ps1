@@ -11,11 +11,10 @@ $output = Join-Path $backupDirectory "daily-learning-guide-$timestamp.sql"
 
 Push-Location $workerDirectory
 try {
-    & npx wrangler d1 export daily-learning-guide --remote --output $output --skip-confirmation
+    & npx.cmd wrangler d1 export daily-learning-guide --remote --output $output --skip-confirmation
     if ($LASTEXITCODE -ne 0) { throw 'D1 export failed.' }
 } finally {
     Pop-Location
 }
 
 Write-Host "D1 backup written to $output"
-
