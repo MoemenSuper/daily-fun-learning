@@ -11,6 +11,7 @@ export interface Bindings {
   DB: D1Database
   ASSETS: Fetcher
   ENVIRONMENT: 'development' | 'production'
+  DEVICE_REGISTRATION_SECRET?: string
 }
 
 export interface LessonSummary {
@@ -21,4 +22,3 @@ export interface LessonSummary {
   deepExplanation: string
   state: LessonState
 }
-

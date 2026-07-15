@@ -25,10 +25,11 @@ export async function getCurrentLesson(db: D1Database): Promise<LessonSummary | 
   if (!row) {
     const first = await db
       .prepare(
-        `SELECT id, slug, title, summary, deep_explanation, NULL AS state
-         FROM lessons
-         WHERE published = 1
-         ORDER BY sequence
+        `SELECT l.id, l.slug, l.title, l.summary, l.deep_explanation, NULL AS state
+         FROM lessons l
+         LEFT JOIN lesson_progress p ON p.lesson_id = l.id
+         WHERE l.published = 1 AND p.lesson_id IS NULL
+         ORDER BY l.sequence
          LIMIT 1`,
       )
       .first<LessonRow>()
@@ -54,14 +55,21 @@ export async function getCurrentLesson(db: D1Database): Promise<LessonSummary | 
   }
 }
 
-export async function setLessonState(
+export async function transitionLessonState(
   db: D1Database,
   lessonId: number,
+  allowedFrom: LessonState[],
   state: LessonState,
+  reviewOnly = false,
 ): Promise<boolean> {
+  const placeholders = allowedFrom.map(() => '?').join(', ')
   const result = await db
-    .prepare('UPDATE lesson_progress SET state = ?, updated_at = CURRENT_TIMESTAMP WHERE lesson_id = ?')
-    .bind(state, lessonId)
+    .prepare(
+      `UPDATE lesson_progress
+       SET state = ?, review_only = ?, updated_at = CURRENT_TIMESTAMP
+       WHERE lesson_id = ? AND state IN (${placeholders})`,
+    )
+    .bind(state, reviewOnly ? 1 : 0, lessonId, ...allowedFrom)
     .run()
   return result.meta.changes === 1
 }
@@ -81,4 +89,3 @@ export async function claimDailyDelivery(
     .run()
   return result.meta.changes === 1
 }
-

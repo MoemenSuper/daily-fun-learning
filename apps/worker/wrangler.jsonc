@@ -4,13 +4,13 @@
   "main": "src/index.ts",
   "compatibility_date": "2026-07-15",
   "vars": {
-    "ENVIRONMENT": "development"
+    "ENVIRONMENT": "production"
   },
   "assets": {
     "directory": "../web/dist",
     "binding": "ASSETS",
     "not_found_handling": "single-page-application",
-    "run_worker_first": ["/api/*"]
+    "run_worker_first": ["/api/*", "/open"]
   },
   "d1_databases": [
     {
@@ -21,4 +21,3 @@
     }
   ]
 }
-
