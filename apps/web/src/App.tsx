@@ -13,6 +13,12 @@ interface Quiz {
   options: string[]
 }
 
+interface QuizFeedback {
+  correct: boolean
+  correctAnswer: string
+  explanation: string
+}
+
 type Page = 'today' | 'reviews' | 'weekly' | 'profile'
 
 async function requestJson<T>(url: string, init?: RequestInit): Promise<T> {
@@ -53,7 +59,7 @@ export function App() {
 function TodayLesson() {
   const [data, setData] = useState<LessonResponse | null>(null)
   const [view, setView] = useState<'lesson' | 'deep' | 'quiz' | 'feedback' | 'saved'>('lesson')
-  const [feedback, setFeedback] = useState<{ correct: boolean; explanation: string } | null>(null)
+  const [feedback, setFeedback] = useState<QuizFeedback | null>(null)
   const [message, setMessage] = useState('')
 
   useEffect(() => {
@@ -81,7 +87,14 @@ function TodayLesson() {
   async function answer(value: string) {
     if (!data?.quiz) return
     try {
-      const result = await requestJson<{ correct: boolean; explanation: string }>(
+      if (view === 'deep') {
+        await requestJson(`/api/lessons/${data.lesson.id}/action`, {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ action: 'understand' }),
+        })
+      }
+      const result = await requestJson<QuizFeedback>(
         `/api/quizzes/${data.quiz.id}/answer`,
         {
           method: 'POST',
@@ -109,9 +122,9 @@ function TodayLesson() {
             <section key={section.position}>
               <h2>{section.heading}</h2>
               {section.position === 1 ? (
-                <CodeBlock code={section.body.replace(/^```js\n|\n```$/g, '')} />
+                <CodeBlock code={normalizeCodeBlock(section.body)} />
               ) : (
-                <p>{section.body}</p>
+                <p><InlineCode text={section.body} /></p>
               )}
             </section>
           ))}
@@ -126,9 +139,14 @@ function TodayLesson() {
       )}
       {view === 'deep' && (
         <section className="deep-sections">
-          <details open><summary>Start with the example</summary><CodeBlock code={data.sections[0]?.body.replace(/^```js\n|\n```$/g, '') ?? ''} /></details>
-          <details open><summary>Follow the values</summary><p>{data.lesson.deepExplanation}</p></details>
-          <details><summary>Check your understanding</summary><p>{data.quiz?.prompt}</p></details>
+          <details open><summary>Start with the example</summary><CodeBlock code={normalizeCodeBlock(data.sections[0]?.body ?? '')} /></details>
+          <details open><summary>Follow the values</summary><p><InlineCode text={data.lesson.deepExplanation} /></p></details>
+          <details open>
+            <summary>Check your understanding</summary>
+            {data.quiz
+              ? <QuizChoices quiz={data.quiz} onAnswer={answer} onUnknown={() => void chooseAction('review_later')} compact />
+              : <p>No comprehension question is available for this lesson.</p>}
+          </details>
           <button onClick={() => setView('lesson')}>Back to lesson</button>
         </section>
       )}
@@ -146,7 +164,7 @@ function ReviewLater() {
   const [topic, setTopic] = useState('all')
   const [selected, setSelected] = useState<{ lesson: { id: number; title: string; summary: string; deepExplanation: string }; quiz: Quiz | null } | null>(null)
   const [quizActive, setQuizActive] = useState(false)
-  const [feedback, setFeedback] = useState<{ correct: boolean; explanation: string } | null>(null)
+  const [feedback, setFeedback] = useState<QuizFeedback | null>(null)
   const [message, setMessage] = useState('Loading saved lessons…')
 
   useEffect(() => {
@@ -209,7 +227,7 @@ function WeeklyReview() {
   interface Weekly { available: boolean; reviewId?: number; completedCount: number; questions?: Array<Quiz & { title: string }> }
   const [review, setReview] = useState<Weekly | null>(null)
   const [index, setIndex] = useState(0)
-  const [feedback, setFeedback] = useState<{ correct: boolean; explanation: string } | null>(null)
+  const [feedback, setFeedback] = useState<QuizFeedback | null>(null)
   const [message, setMessage] = useState('Checking review eligibility…')
 
   useEffect(() => {
@@ -334,12 +352,73 @@ function Profile() {
   )
 }
 
-function QuizChoices({ quiz, onAnswer, onUnknown }: { quiz: Quiz; onAnswer: (value: string) => Promise<void>; onUnknown?: () => void }) {
-  return <section><h2>Check your understanding</h2><p className="lead">{quiz.prompt}</p><div className="choices">{quiz.options.map((option) => <button key={option} onClick={() => void onAnswer(option)}>{option}</button>)}{onUnknown && <button onClick={onUnknown}>I don’t know yet</button>}</div></section>
+export function QuizChoices({ quiz, onAnswer, onUnknown, compact = false }: { quiz: Quiz; onAnswer: (value: string) => Promise<void>; onUnknown?: () => void; compact?: boolean }) {
+  const [selected, setSelected] = useState('')
+  const [submitting, setSubmitting] = useState(false)
+
+  async function submit(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    if (!selected || submitting) return
+    setSubmitting(true)
+    try {
+      await onAnswer(selected)
+    } finally {
+      setSubmitting(false)
+    }
+  }
+
+  return (
+    <section className={`quiz-card${compact ? ' quiz-card-compact' : ''}`}>
+      {!compact && <h2>Check your understanding</h2>}
+      <form onSubmit={(event) => void submit(event)}>
+        <fieldset>
+          <legend><InlineCode text={quiz.prompt} /></legend>
+          <div className="choices">
+            {quiz.options.map((option) => (
+              <label className={`choice${selected === option ? ' choice-selected' : ''}`} key={option}>
+                <input
+                  checked={selected === option}
+                  name={`quiz-${quiz.id}`}
+                  onChange={() => setSelected(option)}
+                  type="radio"
+                  value={option}
+                />
+                <span><InlineCode text={option} /></span>
+              </label>
+            ))}
+          </div>
+          <div className="quiz-actions">
+            <button className="primary" disabled={!selected || submitting} type="submit">
+              {submitting ? 'Checking…' : 'Check answer'}
+            </button>
+            {onUnknown && <button onClick={onUnknown} type="button">I don’t know yet</button>}
+          </div>
+        </fieldset>
+      </form>
+    </section>
+  )
 }
 
-function Feedback({ feedback }: { feedback: { correct: boolean; explanation: string } }) {
-  return <section aria-live="polite"><h2>{feedback.correct ? 'That’s right.' : 'Not quite yet.'}</h2><p className="lead">{feedback.explanation}</p></section>
+export function normalizeCodeBlock(code: string) {
+  const withRealLines = code.includes('\\n') && !code.includes('\n')
+    ? code.replaceAll('\\n', '\n')
+    : code.replaceAll('\r\n', '\n')
+  return withRealLines
+    .replace(/^```(?:js|javascript)?\s*\n?/i, '')
+    .replace(/\n?```\s*$/, '')
+    .trim()
+}
+
+function Feedback({ feedback }: { feedback: QuizFeedback }) {
+  return <section className={`feedback ${feedback.correct ? 'feedback-correct' : 'feedback-review'}`} aria-live="polite"><p className="feedback-label">{feedback.correct ? 'Correct' : 'Take another look'}</p><h2>{feedback.correct ? 'That’s right.' : 'Not quite yet.'}</h2><p className="correct-answer"><strong>Correct answer:</strong> <InlineCode text={feedback.correctAnswer} /></p><p>{feedback.explanation}</p></section>
+}
+
+function InlineCode({ text }: { text: string }) {
+  return <>{text.split(/(`[^`]+`)/g).filter(Boolean).map((part, index) => (
+    part.startsWith('`') && part.endsWith('`')
+      ? <code className="inline-code" key={index}>{part.slice(1, -1)}</code>
+      : <span key={index}>{part}</span>
+  ))}</>
 }
 
 function SourceList({ sources }: { sources: LessonResponse['sources'] }) {
@@ -361,7 +440,10 @@ function CodeBlock({ code, emphasizedLines = [] }: { code: string; emphasizedLin
 
   return (
     <div className="code-block">
-      <button className="copy-code" onClick={() => void copy()}>{copied ? 'Copied' : 'Copy'}</button>
+      <div className="code-toolbar">
+        <span>JavaScript</span>
+        <button className="copy-code" onClick={() => void copy()}>{copied ? 'Copied' : 'Copy'}</button>
+      </div>
       <pre aria-label="JavaScript example"><code>{code.split('\n').map((line, index) => (
         <span className={`code-line${emphasizedLines.includes(index + 1) ? ' emphasized' : ''}`} key={index}>
           <span className="line-number" aria-hidden="true">{index + 1}</span>

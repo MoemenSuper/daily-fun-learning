@@ -263,7 +263,11 @@ describe('private device authentication', () => {
       },
       testEnv,
     )
-    expect(await answer.json()).toMatchObject({ correct: false, state: 'completed' })
+    expect(await answer.json()).toMatchObject({
+      correct: false,
+      correctAnswer: 'A function',
+      state: 'completed',
+    })
     const review = await testEnv.DB
       .prepare('SELECT reason FROM review_schedule WHERE lesson_id = ?')
       .bind(body.lesson.id)
@@ -363,7 +367,11 @@ describe('private device authentication', () => {
       },
       testEnv,
     )
-    expect(await answer.json()).toMatchObject({ correct: false, state: 'completed' })
+    expect(await answer.json()).toMatchObject({
+      correct: false,
+      correctAnswer: 'A function',
+      state: 'completed',
+    })
     expect(
       await testEnv.DB.prepare('SELECT reason FROM review_schedule WHERE lesson_id = ?')
         .bind(lessonBody.lesson.id)

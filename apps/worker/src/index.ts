@@ -273,7 +273,12 @@ app.post('/api/quizzes/:id/answer', async (c) => {
         ]),
   ])
 
-  return c.json({ correct, explanation: question.explanation, state: 'completed' })
+  return c.json({
+    correct,
+    correctAnswer: question.correct_answer,
+    explanation: question.explanation,
+    state: 'completed',
+  })
 })
 
 app.get('/api/reviews/later', async (c) => {
@@ -503,7 +508,7 @@ app.post('/api/weekly-review/:reviewId/questions/:questionId/answer', async (c) 
       .bind(questionId, parsed.data.answer, correct ? 1 : 0),
     c.env.DB.prepare("UPDATE weekly_reviews SET status = 'opened' WHERE id = ?").bind(reviewId),
   ])
-  return c.json({ correct, explanation: question.explanation })
+  return c.json({ correct, correctAnswer: question.correct_answer, explanation: question.explanation })
 })
 
 app.notFound((c) => c.json({ error: 'Not found.' }, 404))
