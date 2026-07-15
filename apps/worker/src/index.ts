@@ -9,6 +9,27 @@ import type { Bindings } from './types'
 
 const app = new Hono<{ Bindings: Bindings }>()
 
+async function createOpeningUrl(
+  db: D1Database,
+  requestUrl: string,
+  deviceId: string,
+  lessonId: number,
+  lifetimeMs: number,
+) {
+  const token = randomToken()
+  const expiresAt = new Date(Date.now() + lifetimeMs).toISOString()
+  await db
+    .prepare(
+      'INSERT INTO opening_tokens (token_hash, device_id, lesson_id, expires_at) VALUES (?, ?, ?, ?)',
+    )
+    .bind(await sha256(token), deviceId, lessonId, expiresAt)
+    .run()
+  const url = new URL(requestUrl)
+  url.pathname = '/open'
+  url.search = new URLSearchParams({ token }).toString()
+  return { url: url.toString(), expiresAt }
+}
+
 app.get('/api/health', (c) => c.json({ ok: true }))
 
 app.post('/api/devices/register', async (c) => {
@@ -93,18 +114,7 @@ app.post('/api/opening-tokens', async (c) => {
   const lesson = await getCurrentLesson(c.env.DB)
   if (!lesson) return c.json({ error: 'No active lesson.' }, 404)
 
-  const token = randomToken()
-  const expiresAt = new Date(Date.now() + 5 * 60 * 1000).toISOString()
-  await c.env.DB
-    .prepare(
-      'INSERT INTO opening_tokens (token_hash, device_id, lesson_id, expires_at) VALUES (?, ?, ?, ?)',
-    )
-    .bind(await sha256(token), deviceId, lesson.id, expiresAt)
-    .run()
-  const url = new URL(c.req.url)
-  url.pathname = '/open'
-  url.search = new URLSearchParams({ token }).toString()
-  return c.json({ url: url.toString(), expiresAt })
+  return c.json(await createOpeningUrl(c.env.DB, c.req.url, deviceId, lesson.id, 5 * 60 * 1000))
 })
 
 app.get('/api/lessons/current', async (c) => {
@@ -173,12 +183,20 @@ app.post('/api/delivery/check', async (c) => {
   if (!claimed) return c.json({ shouldNotify: false, reason: 'already_claimed_today' })
 
   await transitionLessonState(c.env.DB, lesson.id, ['pending', 'notified', 'opened'], 'notified')
+  const opening = await createOpeningUrl(
+    c.env.DB,
+    c.req.url,
+    body.data.deviceId,
+    lesson.id,
+    24 * 60 * 60 * 1000,
+  )
   return c.json({
     shouldNotify: true,
     lesson: { id: lesson.id, title: lesson.title },
     notification: {
       title: 'Your learning tip is ready',
       body: `Today: ${lesson.title}. Open it whenever you feel like learning something new.`,
+      openUrl: opening.url,
     },
   })
 })

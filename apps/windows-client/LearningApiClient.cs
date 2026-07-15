@@ -64,7 +64,8 @@ internal sealed record DeliveryResult(
 
 internal sealed record NotificationCopy(
     [property: JsonPropertyName("title")] string Title,
-    [property: JsonPropertyName("body")] string Body);
+    [property: JsonPropertyName("body")] string Body,
+    [property: JsonPropertyName("openUrl")] string OpenUrl);
 
 internal sealed record OpeningTokenResult([property: JsonPropertyName("url")] string Url);
 

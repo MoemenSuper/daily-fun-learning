@@ -148,8 +148,16 @@ describe('private device authentication', () => {
     const first = await request()
     const second = await request()
     expect(first.status).toBe(200)
-    expect(await first.json()).toMatchObject({ shouldNotify: true })
+    const firstBody = (await first.json()) as {
+      shouldNotify: boolean
+      notification: { openUrl: string }
+    }
+    expect(firstBody).toMatchObject({ shouldNotify: true })
+    expect(new URL(firstBody.notification.openUrl).pathname).toBe('/open')
     expect(await second.json()).toMatchObject({ shouldNotify: false, reason: 'already_claimed_today' })
+    expect(
+      await testEnv.DB.prepare('SELECT COUNT(*) AS count FROM opening_tokens').first(),
+    ).toMatchObject({ count: 1 })
   })
 
   it('exchanges an opening token only once for an HTTP-only session', async () => {
@@ -317,14 +325,13 @@ describe('private device authentication', () => {
       },
       testEnv,
     )
-    expect(await delivery.json()).toMatchObject({ shouldNotify: true })
+    const deliveryBody = (await delivery.json()) as {
+      shouldNotify: boolean
+      notification: { openUrl: string }
+    }
+    expect(deliveryBody).toMatchObject({ shouldNotify: true })
 
-    const tokenResponse = await app.request(
-      '/api/opening-tokens',
-      { method: 'POST', headers: { authorization: deviceAuthorization } },
-      testEnv,
-    )
-    const { url } = (await tokenResponse.json()) as { url: string }
+    const url = deliveryBody.notification.openUrl
     const exchange = await app.request(url, undefined, testEnv)
     const cookie = exchange.headers.get('set-cookie')?.split(';')[0]
     expect(cookie).toBeTruthy()

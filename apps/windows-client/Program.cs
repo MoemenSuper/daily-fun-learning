@@ -2,7 +2,6 @@ using System.Diagnostics;
 using System.Security.Cryptography;
 using Microsoft.Windows.AppLifecycle;
 using Microsoft.Windows.AppNotifications;
-using Microsoft.Windows.AppNotifications.Builder;
 
 namespace DailyLearningGuide;
 
@@ -62,7 +61,12 @@ internal static class Program
             if (args.Contains("--test-notification"))
             {
                 Trace("showing test notification");
-                ShowNotification(manager, "Daily Learning Guide test", "Notifications are working. This test did not change lesson delivery state.");
+                var openUrl = new LearningApiClient(ClientConfig.Load()).CreateOpeningUrlAsync().GetAwaiter().GetResult();
+                ShowNotification(
+                    manager,
+                    "Daily Learning Guide test",
+                    "Notifications are working. This test did not change lesson delivery state.",
+                    openUrl);
                 Trace("shown; unregistering");
                 manager.Unregister();
                 Trace("unregistered");
@@ -72,7 +76,11 @@ internal static class Program
             var result = new LearningApiClient(ClientConfig.Load()).CheckDeliveryAsync().GetAwaiter().GetResult();
             if (result.ShouldNotify && result.Notification is not null)
             {
-                ShowNotification(manager, result.Notification.Title, result.Notification.Body);
+                ShowNotification(
+                    manager,
+                    result.Notification.Title,
+                    result.Notification.Body,
+                    result.Notification.OpenUrl);
             }
             manager.Unregister();
             return 0;
@@ -132,17 +140,23 @@ internal static class Program
         .Where(parts => parts.Length == 2)
         .ToDictionary(parts => Uri.UnescapeDataString(parts[0]), parts => Uri.UnescapeDataString(parts[1]));
 
-    private static void ShowNotification(AppNotificationManager manager, string title, string body)
+    private static void ShowNotification(AppNotificationManager manager, string title, string body, string openUrl)
     {
-        var notification = new AppNotificationBuilder()
-            .AddArgument("action", "open")
-            .AddText(title)
-            .AddText(body)
-            .MuteAudio()
-            .BuildNotification();
+        var notification = new AppNotification(
+            $"<toast launch=\"{EscapeXml(openUrl)}\" activationType=\"protocol\">" +
+            "<visual><binding template=\"ToastGeneric\">" +
+            $"<text>{EscapeXml(title)}</text><text>{EscapeXml(body)}</text>" +
+            "</binding></visual><audio silent=\"true\"/></toast>");
         notification.ExpiresOnReboot = true;
         manager.Show(notification);
     }
+
+    private static string EscapeXml(string value) => value
+        .Replace("&", "&amp;")
+        .Replace("\"", "&quot;")
+        .Replace("'", "&apos;")
+        .Replace("<", "&lt;")
+        .Replace(">", "&gt;");
 
     private static void WriteError(Exception error)
     {

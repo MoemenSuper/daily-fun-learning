@@ -37,7 +37,7 @@ Start-ScheduledTask -TaskName 'Daily Learning Guide'
 & "$env:LOCALAPPDATA\DailyLearningGuide\DailyLearningGuide.exe" --test-notification
 ```
 
-Test mode shows a native fixture notification without calling the delivery endpoint, so it cannot consume the real daily claim.
+Test mode shows a native fixture notification without calling the delivery endpoint, so it cannot consume the real daily claim. It creates its opening link before showing the notification; clicking the notification then opens that link directly in the default browser without starting the client again.
 
 ## Reset the device credential
 
@@ -55,4 +55,3 @@ This preserves the device ID and cloud learning history while replacing the loca
 ```
 
 Uninstall removes the scheduled task, notification registration, local credential, and application directory. It deliberately leaves D1 learning history intact.
-
