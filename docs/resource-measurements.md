@@ -14,7 +14,7 @@ Measured on Windows 11 x64 build 26200 using the Release, self-contained, trimme
 | Due-notification JSON response | 227 bytes |
 | Duplicate-check JSON response | 55 bytes |
 
-The process includes a one-second activation-detection window and a 15-second HTTP timeout. It does not remain alive after a check or notification display.
+Cold-start notification data is read directly from the Windows app lifecycle API, and network requests have a 15-second timeout. The process does not remain alive after a check or notification activation.
 
 The first umbrella Windows App SDK build measured 154.38 MiB because it included unused WinUI, DirectML, ONNX, widgets, and AI components. Referencing only the official Foundation and Runtime packages reduced the published footprint to 22.64 MiB while preserving `Microsoft.Windows.AppNotifications.AppNotificationManager` and the cold-start lifecycle projection.
 
