@@ -4,7 +4,7 @@
 
 Version one uses one Cloudflare Worker deployment. Hono handles `/api/*`; Cloudflare Static Assets serves the compiled React application; D1 stores curriculum and progress. Keeping the UI and API on one origin avoids CORS, a second deployment, and permanent browser credentials.
 
-The Windows client is a short-lived native executable launched by Task Scheduler. It calls the delivery endpoint, displays a notification only when the backend grants that day's delivery claim, and exits. Clicking the notification asks the backend for a single-use opening token and opens the hosted UI. No local server or background process is used.
+The Windows client is a short-lived native executable launched by Task Scheduler. It calls the delivery endpoint, receives a single-use opening URL, displays a notification only when the backend grants that day's delivery claim, and exits. Clicking the notification opens that HTTPS URL in the browser without starting the client again. No local server or background process is used.
 
 ## Runtime ownership
 
@@ -12,6 +12,7 @@ The Windows client is a short-lived native executable launched by Task Scheduler
 - The Worker owns state transitions and rejects invalid transitions.
 - The browser renders lessons and submits explicit actions; it never holds a permanent device secret.
 - The Windows client owns only notification display and activation.
+- The lesson library reads any published lesson without changing daily progress. Its practice quizzes record attempts but do not advance the daily state machine.
 
 ## Lesson states
 
@@ -26,7 +27,7 @@ quiz_pending --------> completed -> scheduled_for_review (incorrect answer)
 
 ## Authentication boundary
 
-Production API calls from the notification client require a registered device ID and a high-entropy credential. D1 stores only its SHA-256 hash. Clicking a notification creates a five-minute, single-use opening token; exchanging it creates a 12-hour Secure, HTTP-only, SameSite session cookie. The localhost development command uses an explicit browser-session bypass, while the default Wrangler configuration remains in production mode.
+Production API calls from the notification client require a registered device ID and a high-entropy credential. D1 stores only its SHA-256 hash. A daily delivery URL contains a 24-hour, single-use opening token; manual test links expire after five minutes. Exchanging either token creates a 12-hour Secure, HTTP-only, SameSite session cookie. The localhost development command uses an explicit browser-session bypass, while the default Wrangler configuration remains in production mode.
 
 ## Deliberately deferred
 

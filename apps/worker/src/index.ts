@@ -117,6 +117,24 @@ app.post('/api/opening-tokens', async (c) => {
   return c.json(await createOpeningUrl(c.env.DB, c.req.url, deviceId, lesson.id, 5 * 60 * 1000))
 })
 
+app.get('/api/lessons', async (c) => {
+  if (!(await hasBrowserSession(c))) return c.json({ error: 'Unauthorized.' }, 401)
+  const lessons = await c.env.DB
+    .prepare(
+      `SELECT l.id, l.slug, l.title, l.summary, l.sequence,
+              path.title AS path, path.phase, t.name AS topic,
+              COALESCE(p.state, 'not_started') AS state
+       FROM lessons l
+       JOIN learning_paths path ON path.id = l.path_id
+       JOIN topics t ON t.id = l.topic_id
+       LEFT JOIN lesson_progress p ON p.lesson_id = l.id
+       WHERE l.published = 1
+       ORDER BY l.sequence`,
+    )
+    .all()
+  return c.json({ lessons: lessons.results })
+})
+
 app.get('/api/lessons/current', async (c) => {
   if (!(await hasBrowserSession(c))) return c.json({ error: 'Unauthorized.' }, 401)
   const lesson = await getCurrentLesson(c.env.DB)
@@ -144,6 +162,72 @@ app.get('/api/lessons/current', async (c) => {
     sources: sources.results,
     quiz: quiz ? { id: quiz.id, prompt: quiz.prompt, options: JSON.parse(quiz.options_json) } : null,
   })
+})
+
+app.get('/api/lessons/:id', async (c) => {
+  if (!(await hasBrowserSession(c))) return c.json({ error: 'Unauthorized.' }, 401)
+  const lessonId = Number(c.req.param('id'))
+  if (!Number.isInteger(lessonId)) return c.json({ error: 'Invalid lesson id.' }, 400)
+  const lesson = await c.env.DB
+    .prepare(
+      `SELECT l.id, l.slug, l.title, l.summary, l.deep_explanation AS deepExplanation,
+              l.sequence, path.title AS path, path.phase, t.name AS topic,
+              COALESCE(p.state, 'not_started') AS state
+       FROM lessons l
+       JOIN learning_paths path ON path.id = l.path_id
+       JOIN topics t ON t.id = l.topic_id
+       LEFT JOIN lesson_progress p ON p.lesson_id = l.id
+       WHERE l.id = ? AND l.published = 1`,
+    )
+    .bind(lessonId)
+    .first()
+  if (!lesson) return c.json({ error: 'Lesson not found.' }, 404)
+
+  const [sections, sources, quiz] = await Promise.all([
+    c.env.DB
+      .prepare('SELECT heading, body, position FROM lesson_sections WHERE lesson_id = ? ORDER BY position')
+      .bind(lessonId)
+      .all(),
+    c.env.DB
+      .prepare('SELECT title, url, publisher, relevant_section FROM sources WHERE lesson_id = ?')
+      .bind(lessonId)
+      .all(),
+    c.env.DB
+      .prepare('SELECT id, prompt, options_json FROM quiz_questions WHERE lesson_id = ? ORDER BY position LIMIT 1')
+      .bind(lessonId)
+      .first<{ id: number; prompt: string; options_json: string }>(),
+  ])
+  return c.json({
+    lesson,
+    sections: sections.results,
+    sources: sources.results,
+    quiz: quiz ? { id: quiz.id, prompt: quiz.prompt, options: JSON.parse(quiz.options_json) } : null,
+  })
+})
+
+app.post('/api/lessons/:id/practice', async (c) => {
+  if (!(await hasBrowserSession(c))) return c.json({ error: 'Unauthorized.' }, 401)
+  const lessonId = Number(c.req.param('id'))
+  const parsed = z
+    .object({ answer: z.string().min(1).max(200) })
+    .safeParse(await c.req.json().catch(() => null))
+  if (!Number.isInteger(lessonId) || !parsed.success) return c.json({ error: 'Invalid request.' }, 400)
+  const question = await c.env.DB
+    .prepare(
+      `SELECT q.id, q.correct_answer, q.explanation
+       FROM quiz_questions q JOIN lessons l ON l.id = q.lesson_id
+       WHERE q.lesson_id = ? AND l.published = 1
+       ORDER BY q.position LIMIT 1`,
+    )
+    .bind(lessonId)
+    .first<{ id: number; correct_answer: string; explanation: string }>()
+  if (!question) return c.json({ error: 'Question not found.' }, 404)
+  const correct = parsed.data.answer === question.correct_answer
+  await c.env.DB
+    .prepare('INSERT INTO quiz_attempts (question_id, answer, correct) VALUES (?, ?, ?)')
+    .bind(question.id, parsed.data.answer, correct ? 1 : 0)
+    .run()
+  return c.json({ correct, correctAnswer: question.correct_answer, explanation: question.explanation })
 })
 
 app.post('/api/delivery/check', async (c) => {
@@ -257,10 +341,20 @@ app.post('/api/quizzes/:id/answer', async (c) => {
     c.env.DB
       .prepare(
         `UPDATE lesson_progress
-         SET state = 'completed', completed_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP
+         SET state = 'completed',
+             review_only = CASE WHEN ? = 1 THEN 0 ELSE review_only END,
+             completed_at = CURRENT_TIMESTAMP,
+             updated_at = CURRENT_TIMESTAMP
          WHERE lesson_id = ? AND state = 'quiz_pending'`,
       )
-      .bind(question.lesson_id),
+      .bind(correct ? 1 : 0, question.lesson_id),
+    ...(correct
+      ? [
+          c.env.DB
+            .prepare('UPDATE review_schedule SET reviewed_at = CURRENT_TIMESTAMP WHERE lesson_id = ? AND reviewed_at IS NULL')
+            .bind(question.lesson_id),
+        ]
+      : []),
     ...(correct
       ? []
       : [
@@ -313,12 +407,24 @@ app.get('/api/reviews/:id', async (c) => {
     .bind(lessonId)
     .first()
   if (!lesson) return c.json({ error: 'Review lesson not found.' }, 404)
-  const quiz = await c.env.DB
-    .prepare('SELECT id, prompt, options_json FROM quiz_questions WHERE lesson_id = ? ORDER BY position LIMIT 1')
-    .bind(lessonId)
-    .first<{ id: number; prompt: string; options_json: string }>()
+  const [sections, sources, quiz] = await Promise.all([
+    c.env.DB
+      .prepare('SELECT heading, body, position FROM lesson_sections WHERE lesson_id = ? ORDER BY position')
+      .bind(lessonId)
+      .all(),
+    c.env.DB
+      .prepare('SELECT title, url, publisher, relevant_section FROM sources WHERE lesson_id = ?')
+      .bind(lessonId)
+      .all(),
+    c.env.DB
+      .prepare('SELECT id, prompt, options_json FROM quiz_questions WHERE lesson_id = ? ORDER BY position LIMIT 1')
+      .bind(lessonId)
+      .first<{ id: number; prompt: string; options_json: string }>(),
+  ])
   return c.json({
     lesson,
+    sections: sections.results,
+    sources: sources.results,
     quiz: quiz ? { id: quiz.id, prompt: quiz.prompt, options: JSON.parse(quiz.options_json) } : null,
   })
 })

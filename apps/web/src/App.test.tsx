@@ -1,6 +1,6 @@
 import { renderToStaticMarkup } from 'react-dom/server'
 import { describe, expect, it } from 'vitest'
-import { normalizeCodeBlock, QuizChoices } from './App'
+import { DeepExplanation, normalizeCodeBlock, parseDeepExplanation, QuizChoices } from './App'
 
 describe('lesson interaction and formatting', () => {
   it('normalizes escaped Markdown code into real lines without fences', () => {
@@ -21,5 +21,18 @@ describe('lesson interaction and formatting', () => {
 
     expect(markup).toContain('type="radio"')
     expect(markup).toContain('Check answer')
+  })
+
+  it('splits a deep explanation into readable disclosure sections', () => {
+    const stored = 'Follow the execution\nFirst paragraph.\n\nCommon mistake\nSecond paragraph.'
+
+    expect(parseDeepExplanation(stored)).toEqual([
+      { heading: 'Follow the execution', body: 'First paragraph.' },
+      { heading: 'Common mistake', body: 'Second paragraph.' },
+    ])
+
+    const markup = renderToStaticMarkup(<DeepExplanation text={stored} />)
+    expect(markup).toContain('<summary>Follow the execution</summary>')
+    expect(markup).toContain('<summary>Common mistake</summary>')
   })
 })

@@ -4,9 +4,7 @@ A private, lightweight learning app designed to deliver one calm computer-scienc
 
 ## Current status
 
-The complete local curriculum flow is working: 14 sourced lessons across related theory and practice phases, Africa/Tunis delivery timing, duplicate prevention, ignored-lesson repetition, deep explanations, quizzes with feedback, review later, weekly reviews, profile editing, device authentication, and single-use browser sessions.
-
-It is intentionally **not deployed yet**. Local implementation and resource measurements are complete; Cloudflare browser authorization, production smoke tests, and final Windows installation remain.
+The app is deployed at `https://daily-fun-learning.ouerghuimoemej.workers.dev`. Its curriculum contains 14 sourced lessons across related theory and practice phases. Every lesson remains available in the lesson library with structured deep explanations, a practice quiz, and visible progress. The daily flow also includes Africa/Tunis delivery timing, duplicate prevention, ignored-lesson repetition, review later, weekly reviews, profile editing, device authentication, and single-use browser sessions.
 
 ## Architecture
 
@@ -48,9 +46,9 @@ npm run build
 .\scripts\publish-windows.ps1
 ```
 
-## Cloudflare account setup
+## Cloudflare deployment
 
-No dashboard setup is needed yet. Once production authentication is implemented and tested, deployment will use Wrangler:
+The current deployment uses Wrangler and the Cloudflare free tier:
 
 1. Run `npx wrangler login` and approve the browser authorization.
 2. Create the free D1 database with `npx wrangler d1 create daily-learning-guide`.
@@ -58,7 +56,7 @@ No dashboard setup is needed yet. Once production authentication is implemented 
 4. Apply migrations and seed content to the remote database.
 5. Deploy the Worker and its static assets.
 
-The deployment steps are performed only after the complete local test suite passes. The default Worker configuration enforces production authentication; only `npm run dev` opts into the localhost browser-session bypass.
+Run the complete local test suite before deploying. The default Worker configuration enforces production authentication; only `npm run dev` opts into the localhost browser-session bypass.
 
 ## Repository layout
 

@@ -72,6 +72,49 @@ describe('private device authentication', () => {
   it('keeps lesson content private without a browser session', async () => {
     const response = await app.request('/api/lessons/current', undefined, testEnv)
     expect(response.status).toBe(401)
+
+    const library = await app.request('/api/lessons', undefined, testEnv)
+    expect(library.status).toBe(401)
+  })
+
+  it('lists every published lesson and opens one without changing its progress', async () => {
+    const cookie = await createBrowserSession()
+    const list = await app.request('/api/lessons', { headers: { cookie } }, testEnv)
+    expect(list.status).toBe(200)
+    const body = (await list.json()) as {
+      lessons: Array<{ id: number; title: string; phase: string; state: string }>
+    }
+    expect(body.lessons).toEqual([
+      expect.objectContaining({
+        title: 'A function can be a value',
+        phase: 'theory',
+        state: 'pending',
+      }),
+    ])
+
+    const lessonId = body.lessons[0]!.id
+    const detail = await app.request(`/api/lessons/${lessonId}`, { headers: { cookie } }, testEnv)
+    expect(detail.status).toBe(200)
+    expect(await detail.json()).toMatchObject({
+      lesson: { id: lessonId, title: 'A function can be a value', state: 'pending' },
+      sections: [],
+      sources: [],
+      quiz: expect.objectContaining({ prompt: 'What value is passed?' }),
+    })
+
+    const practice = await app.request(
+      `/api/lessons/${lessonId}/practice`,
+      {
+        method: 'POST',
+        headers: { cookie, 'content-type': 'application/json' },
+        body: JSON.stringify({ answer: 'A function' }),
+      },
+      testEnv,
+    )
+    expect(await practice.json()).toMatchObject({ correct: true, correctAnswer: 'A function' })
+    expect(
+      await testEnv.DB.prepare('SELECT COUNT(*) AS count FROM lesson_progress').first(),
+    ).toMatchObject({ count: 1 })
   })
 
   it('loads and saves the complete learning profile', async () => {
@@ -239,6 +282,40 @@ describe('private device authentication', () => {
     const list = await app.request('/api/reviews/later', { headers: { cookie } }, testEnv)
     const body = (await list.json()) as { reviews: Array<{ id: number; reason: string }> }
     expect(body.reviews).toContainEqual(expect.objectContaining({ id: lesson.id, reason: 'saved_for_later' }))
+  })
+
+  it('removes a saved lesson after a correct review quiz', async () => {
+    const cookie = await createBrowserSession()
+    const lessonResponse = await app.request('/api/lessons/current', { headers: { cookie } }, testEnv)
+    const body = (await lessonResponse.json()) as { lesson: { id: number }; quiz: { id: number } }
+    await app.request(
+      `/api/lessons/${body.lesson.id}/action`,
+      {
+        method: 'POST',
+        headers: { cookie, 'content-type': 'application/json' },
+        body: JSON.stringify({ action: 'review_later' }),
+      },
+      testEnv,
+    )
+    await app.request(`/api/reviews/${body.lesson.id}/start`, { method: 'POST', headers: { cookie } }, testEnv)
+    const answer = await app.request(
+      `/api/quizzes/${body.quiz.id}/answer`,
+      {
+        method: 'POST',
+        headers: { cookie, 'content-type': 'application/json' },
+        body: JSON.stringify({ answer: 'A function' }),
+      },
+      testEnv,
+    )
+    expect(await answer.json()).toMatchObject({ correct: true, state: 'completed' })
+
+    const list = await app.request('/api/reviews/later', { headers: { cookie } }, testEnv)
+    expect(await list.json()).toEqual({ reviews: [] })
+    expect(
+      await testEnv.DB.prepare('SELECT state, review_only FROM lesson_progress WHERE lesson_id = ?')
+        .bind(body.lesson.id)
+        .first(),
+    ).toMatchObject({ state: 'completed', review_only: 0 })
   })
 
   it('completes an incorrect quiz and schedules the lesson for review', async () => {

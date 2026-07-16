@@ -1,7 +1,17 @@
 import { useEffect, useMemo, useState } from 'react'
 
 interface LessonResponse {
-  lesson: { id: number; title: string; summary: string; deepExplanation: string; state: string }
+  lesson: {
+    id: number
+    title: string
+    summary: string
+    deepExplanation: string
+    state: string
+    phase?: 'theory' | 'practice'
+    path?: string
+    topic?: string
+    sequence?: number
+  }
   sections: Array<{ heading: string; body: string; position: number }>
   sources: Array<{ title: string; url: string; publisher: string; relevant_section: string }>
   quiz: Quiz | null
@@ -19,7 +29,7 @@ interface QuizFeedback {
   explanation: string
 }
 
-type Page = 'today' | 'reviews' | 'weekly' | 'profile'
+type Page = 'today' | 'lessons' | 'reviews' | 'weekly' | 'profile'
 
 async function requestJson<T>(url: string, init?: RequestInit): Promise<T> {
   const response = await fetch(url, init)
@@ -31,7 +41,18 @@ async function requestJson<T>(url: string, init?: RequestInit): Promise<T> {
 }
 
 export function App() {
-  const [page, setPage] = useState<Page>('today')
+  const [page, setPage] = useState<Page>(() => pageFromHash())
+
+  useEffect(() => {
+    const updatePage = () => setPage(pageFromHash())
+    window.addEventListener('hashchange', updatePage)
+    return () => window.removeEventListener('hashchange', updatePage)
+  }, [])
+
+  function navigate(page: Page) {
+    window.location.hash = page === 'today' ? '' : page
+    setPage(page)
+  }
 
   return (
     <>
@@ -39,21 +60,28 @@ export function App() {
         <span className="brand">Daily Learning</span>
         {([
           ['today', 'Today'],
+          ['lessons', 'Lessons'],
           ['reviews', 'Review later'],
           ['weekly', 'Weekly review'],
           ['profile', 'Profile'],
         ] as Array<[Page, string]>).map(([value, label]) => (
-          <button className={page === value ? 'nav-active' : ''} key={value} onClick={() => setPage(value)}>
+          <button className={page === value ? 'nav-active' : ''} key={value} onClick={() => navigate(value)}>
             {label}
           </button>
         ))}
       </nav>
       {page === 'today' && <TodayLesson />}
+      {page === 'lessons' && <LessonLibrary />}
       {page === 'reviews' && <ReviewLater />}
       {page === 'weekly' && <WeeklyReview />}
       {page === 'profile' && <Profile />}
     </>
   )
+}
+
+function pageFromHash(): Page {
+  const candidate = window.location.hash.slice(1)
+  return ['lessons', 'reviews', 'weekly', 'profile'].includes(candidate) ? candidate as Page : 'today'
 }
 
 function TodayLesson() {
@@ -117,7 +145,7 @@ function TodayLesson() {
       <h1>{data.lesson.title}</h1>
       {view === 'lesson' && (
         <>
-          <p className="lead">{data.lesson.summary}</p>
+          <p className="lead"><InlineCode text={data.lesson.summary} /></p>
           {data.sections.map((section) => (
             <section key={section.position}>
               <h2>{section.heading}</h2>
@@ -140,7 +168,7 @@ function TodayLesson() {
       {view === 'deep' && (
         <section className="deep-sections">
           <details open><summary>Start with the example</summary><CodeBlock code={normalizeCodeBlock(data.sections[0]?.body ?? '')} /></details>
-          <details open><summary>Follow the values</summary><p><InlineCode text={data.lesson.deepExplanation} /></p></details>
+          <DeepExplanation text={data.lesson.deepExplanation} />
           <details open>
             <summary>Check your understanding</summary>
             {data.quiz
@@ -158,11 +186,137 @@ function TodayLesson() {
   )
 }
 
+interface LibraryLesson {
+  id: number
+  title: string
+  summary: string
+  sequence: number
+  phase: 'theory' | 'practice'
+  path: string
+  topic: string
+  state: string
+}
+
+function LessonLibrary() {
+  const [lessons, setLessons] = useState<LibraryLesson[]>([])
+  const [phase, setPhase] = useState<'all' | 'theory' | 'practice'>('all')
+  const [selected, setSelected] = useState<LessonResponse | null>(null)
+  const [quizActive, setQuizActive] = useState(false)
+  const [feedback, setFeedback] = useState<QuizFeedback | null>(null)
+  const [attempt, setAttempt] = useState(0)
+  const [message, setMessage] = useState('Loading your lesson library…')
+
+  useEffect(() => {
+    requestJson<{ lessons: LibraryLesson[] }>('/api/lessons')
+      .then((body) => { setLessons(body.lessons); setMessage('') })
+      .catch((error: Error) => setMessage(error.message))
+  }, [])
+
+  async function openLesson(id: number) {
+    try {
+      setSelected(await requestJson<LessonResponse>(`/api/lessons/${id}`))
+      setQuizActive(false)
+      setFeedback(null)
+      window.scrollTo({ top: 0, behavior: 'smooth' })
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : 'The lesson could not be opened.')
+    }
+  }
+
+  async function answer(value: string) {
+    if (!selected) return
+    const result = await requestJson<QuizFeedback>(`/api/lessons/${selected.lesson.id}/practice`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ answer: value }),
+    })
+    setFeedback(result)
+    setQuizActive(false)
+  }
+
+  if (selected) return (
+    <main>
+      <button onClick={() => setSelected(null)}>← All lessons</button>
+      <p className="eyebrow">Lesson {selected.lesson.sequence} · {selected.lesson.phase} · {stateLabel(selected.lesson.state)}</p>
+      <h1>{selected.lesson.title}</h1>
+      <p className="lead"><InlineCode text={selected.lesson.summary} /></p>
+      {selected.sections.map((section) => (
+        <section key={section.position}>
+          <h2>{section.heading}</h2>
+          {section.position === 1
+            ? <CodeBlock code={normalizeCodeBlock(section.body)} />
+            : <p><InlineCode text={section.body} /></p>}
+        </section>
+      ))}
+      <section className="deep-sections">
+        <h2>Explain deeper</h2>
+        <DeepExplanation text={selected.lesson.deepExplanation} />
+      </section>
+      <SourceList sources={selected.sources} />
+      {selected.quiz && !quizActive && !feedback && (
+        <button className="primary" onClick={() => setQuizActive(true)}>Test my understanding</button>
+      )}
+      {selected.quiz && quizActive && <QuizChoices key={attempt} quiz={selected.quiz} onAnswer={answer} />}
+      {feedback && (
+        <>
+          <Feedback feedback={feedback} />
+          <button onClick={() => { setFeedback(null); setQuizActive(true); setAttempt(attempt + 1) }}>Try the question again</button>
+        </>
+      )}
+    </main>
+  )
+
+  const visible = phase === 'all' ? lessons : lessons.filter((lesson) => lesson.phase === phase)
+  const completed = lessons.filter((lesson) => lesson.state === 'completed').length
+  return (
+    <main>
+      <p className="eyebrow">Lesson library</p>
+      <h1>Everything you can learn</h1>
+      <p className="lead">Open any lesson without changing today’s progress. Your daily path still moves one lesson at a time.</p>
+      {lessons.length > 0 && <p className="library-progress">{completed} of {lessons.length} completed</p>}
+      <div className="filter-row" aria-label="Filter lessons by phase">
+        {(['all', 'theory', 'practice'] as const).map((value) => (
+          <button className={phase === value ? 'filter-active' : ''} key={value} onClick={() => setPhase(value)}>{value}</button>
+        ))}
+      </div>
+      <div className="lesson-list">
+        {visible.map((lesson) => (
+          <article className="lesson-item" key={lesson.id}>
+            <div className="lesson-number" aria-hidden="true">{String(lesson.sequence).padStart(2, '0')}</div>
+            <div>
+              <p className="eyebrow">{lesson.phase} · {lesson.topic}</p>
+              <h2>{lesson.title}</h2>
+              <p><InlineCode text={lesson.summary} /></p>
+              <span className={`state-badge state-${lesson.state}`}>{stateLabel(lesson.state)}</span>
+            </div>
+            <button onClick={() => void openLesson(lesson.id)}>Open lesson</button>
+          </article>
+        ))}
+      </div>
+      {message && <p role="status">{message}</p>}
+    </main>
+  )
+}
+
+function stateLabel(state: string) {
+  const labels: Record<string, string> = {
+    not_started: 'Not started',
+    pending: 'Up next',
+    notified: 'Today',
+    opened: 'In progress',
+    quiz_pending: 'Quiz waiting',
+    completed: 'Completed',
+    review_later: 'Saved for review',
+    scheduled_for_review: 'Review due',
+  }
+  return labels[state] ?? state.replaceAll('_', ' ')
+}
+
 function ReviewLater() {
   interface Review { id: number; title: string; summary: string; topic: string; reason: string }
   const [reviews, setReviews] = useState<Review[]>([])
   const [topic, setTopic] = useState('all')
-  const [selected, setSelected] = useState<{ lesson: { id: number; title: string; summary: string; deepExplanation: string }; quiz: Quiz | null } | null>(null)
+  const [selected, setSelected] = useState<LessonResponse | null>(null)
   const [quizActive, setQuizActive] = useState(false)
   const [feedback, setFeedback] = useState<QuizFeedback | null>(null)
   const [message, setMessage] = useState('Loading saved lessons…')
@@ -194,9 +348,11 @@ function ReviewLater() {
 
   async function answer(value: string) {
     if (!selected?.quiz) return
-    setFeedback(await requestJson(`/api/quizzes/${selected.quiz.id}/answer`, {
+    const result = await requestJson<QuizFeedback>(`/api/quizzes/${selected.quiz.id}/answer`, {
       method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ answer: value }),
-    }))
+    })
+    setFeedback(result)
+    if (result.correct) setReviews(reviews.filter((review) => review.id !== selected.lesson.id))
     setQuizActive(false)
   }
 
@@ -204,8 +360,17 @@ function ReviewLater() {
     <main>
       <button onClick={() => setSelected(null)}>← Review list</button>
       <p className="eyebrow">Saved lesson</p><h1>{selected.lesson.title}</h1>
-      <p className="lead">{selected.lesson.summary}</p>
-      <details><summary>Deep explanation</summary><p>{selected.lesson.deepExplanation}</p></details>
+      <p className="lead"><InlineCode text={selected.lesson.summary} /></p>
+      {selected.sections.map((section) => (
+        <section key={section.position}>
+          <h2>{section.heading}</h2>
+          {section.position === 1
+            ? <CodeBlock code={normalizeCodeBlock(section.body)} />
+            : <p><InlineCode text={section.body} /></p>}
+        </section>
+      ))}
+      <section className="deep-sections"><h2>Explain deeper</h2><DeepExplanation text={selected.lesson.deepExplanation} /></section>
+      <SourceList sources={selected.sources} />
       {!quizActive && !feedback && <button className="primary" onClick={() => void startQuiz()}>Retake quiz</button>}
       {quizActive && selected.quiz && <QuizChoices quiz={selected.quiz} onAnswer={answer} />}
       {feedback && <Feedback feedback={feedback} />}
@@ -409,8 +574,28 @@ export function normalizeCodeBlock(code: string) {
     .trim()
 }
 
+export function parseDeepExplanation(text: string) {
+  const blocks = text.replaceAll('\r\n', '\n').split(/\n\s*\n/).map((block) => block.trim()).filter(Boolean)
+  const structured = blocks.map((block) => {
+    const [heading, ...body] = block.split('\n')
+    return { heading: heading?.trim() ?? '', body: body.join('\n').trim() }
+  })
+  return structured.every((section) => section.body)
+    ? structured
+    : [{ heading: 'Follow the values', body: text.trim() }]
+}
+
+export function DeepExplanation({ text }: { text: string }) {
+  return <div className="deep-explanation">{parseDeepExplanation(text).map((section, index) => (
+    <details open={index === 0} key={section.heading}>
+      <summary>{section.heading}</summary>
+      <p><InlineCode text={section.body} /></p>
+    </details>
+  ))}</div>
+}
+
 function Feedback({ feedback }: { feedback: QuizFeedback }) {
-  return <section className={`feedback ${feedback.correct ? 'feedback-correct' : 'feedback-review'}`} aria-live="polite"><p className="feedback-label">{feedback.correct ? 'Correct' : 'Take another look'}</p><h2>{feedback.correct ? 'That’s right.' : 'Not quite yet.'}</h2><p className="correct-answer"><strong>Correct answer:</strong> <InlineCode text={feedback.correctAnswer} /></p><p>{feedback.explanation}</p></section>
+  return <section className={`feedback ${feedback.correct ? 'feedback-correct' : 'feedback-review'}`} aria-live="polite"><p className="feedback-label">{feedback.correct ? 'Correct' : 'Take another look'}</p><h2>{feedback.correct ? 'That’s right.' : 'Not quite yet.'}</h2><p className="correct-answer"><strong>Correct answer:</strong> <InlineCode text={feedback.correctAnswer} /></p><p><InlineCode text={feedback.explanation} /></p></section>
 }
 
 function InlineCode({ text }: { text: string }) {
